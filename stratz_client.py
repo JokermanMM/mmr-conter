@@ -77,3 +77,28 @@ class StratzClient:
             except Exception as e:
                 logger.error(f"Error fetching Stratz data: {e}")
                 return None
+
+    async def raw_query(self, steam_id: int) -> str:
+        """Return raw API response for debugging."""
+        query = """
+        query($steamId: Long!) {
+          player(steamAccountId: $steamId) {
+            steamAccount {
+              id
+              name
+            }
+          }
+        }
+        """
+        variables = {"steamId": steam_id}
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    self.URL,
+                    json={"query": query, "variables": variables},
+                    headers=self.headers,
+                    timeout=15.0
+                )
+                return f"Status: {response.status_code}\nHeaders: {dict(response.headers)}\nBody: {response.text[:1000]}"
+            except Exception as e:
+                return f"Error: {e}"

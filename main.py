@@ -165,6 +165,27 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Error monitoring {chat_id}: {e}")
 
+async def debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Debug command to test Stratz API directly."""
+    steam_id = 299539763  # Default test ID
+    if context.args:
+        try:
+            steam_id = int(context.args[0])
+            if steam_id > 76561197960265728:
+                steam_id = steam_id - 76561197960265728
+        except ValueError:
+            pass
+    
+    await update.message.reply_text(f"🔧 Тестирую API для ID: {steam_id}...")
+    
+    token_status = f"Token set: {bool(STRATZ_TOKEN)}, length: {len(STRATZ_TOKEN) if STRATZ_TOKEN else 0}"
+    await update.message.reply_text(f"🔑 {token_status}")
+    
+    result = await stratz.raw_query(steam_id)
+    # Split long message
+    for i in range(0, len(result), 4000):
+        await update.message.reply_text(result[i:i+4000])
+
 async def main():
     # Start web server
     await start_web_server()
@@ -175,6 +196,7 @@ async def main():
     # Handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("set_id", set_id_command))
+    application.add_handler(CommandHandler("debug", debug_command))
     
     # Job queue for polling
     job_queue = application.job_queue
