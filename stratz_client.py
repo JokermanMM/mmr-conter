@@ -7,7 +7,10 @@ class StratzClient:
     URL = "https://api.stratz.com/graphql"
     
     def __init__(self, api_token: str = None):
-        self.headers = {"Content-Type": "application/json"}
+        self.headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "Dota2MMRBot/1.0"
+        }
         if api_token:
             self.headers["Authorization"] = f"Bearer {api_token}"
 
