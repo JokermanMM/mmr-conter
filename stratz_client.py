@@ -15,7 +15,7 @@ class StratzClient:
         # We'll use two queries or one combined to ensure we see the player even without matches
         query = """
         query($steamId: Long!) {
-          player(id: $steamId) {
+          player(steamAccountId: $steamId) {
             steamAccount {
               id
               name
@@ -24,11 +24,14 @@ class StratzClient:
               id
               endDateTime
               players(steamAccountId: $steamId) {
-                afterMmr
+                steamAccountId
                 isVictory
+                heroId
+                afterMmr
                 numKills
                 numDeaths
                 numAssists
+                imp
                 hero {
                   displayName
                 }
