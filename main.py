@@ -185,10 +185,61 @@ async def debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             pass
     
-    await update.message.reply_text(f"🔧 Тестирую OpenDota API для ID: {steam_id}...")
+    await update.message.reply_text(f"🔧 Тестирую API для ID: {steam_id}...")
+    
+    # Test 1: OpenDota (working)
     result = await dota.raw_query(steam_id)
-    for i in range(0, len(result), 4000):
-        await update.message.reply_text(result[i:i+4000])
+    await update.message.reply_text(f"📗 **OpenDota:**\n{result[:2000]}", parse_mode="Markdown")
+    
+    # Test 2: Stratz GraphQL with browser User-Agent
+    stratz_token = os.environ.get("STRATZ_TOKEN", "")
+    import httpx
+    
+    tests = [
+        {
+            "name": "Stratz GraphQL (browser UA)",
+            "url": "https://api.stratz.com/graphql",
+            "method": "POST",
+            "headers": {
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Authorization": f"Bearer {stratz_token}",
+                "Accept": "application/json",
+                "Origin": "https://stratz.com",
+                "Referer": "https://stratz.com/"
+            },
+            "json": {"query": "{ player(steamAccountId: " + str(steam_id) + ") { steamAccount { name } matches(request: {take:1}) { id players(steamAccountId: " + str(steam_id) + ") { afterMmr isVictory hero { displayName } } } } }"}
+        },
+        {
+            "name": "Stratz REST /api/v1/Player",
+            "url": f"https://api.stratz.com/api/v1/Player/{steam_id}",
+            "method": "GET",
+            "headers": {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Authorization": f"Bearer {stratz_token}",
+                "Accept": "application/json"
+            },
+            "json": None
+        }
+    ]
+    
+    async with httpx.AsyncClient() as client:
+        for test in tests:
+            try:
+                if test["method"] == "POST":
+                    r = await client.post(test["url"], json=test["json"], headers=test["headers"], timeout=15.0)
+                else:
+                    r = await client.get(test["url"], headers=test["headers"], timeout=15.0)
+                
+                status = r.status_code
+                body = r.text[:500]
+                is_cf = "Just a moment" in body
+                emoji = "✅" if status == 200 else "❌"
+                cf_tag = " [CLOUDFLARE]" if is_cf else ""
+                
+                await update.message.reply_text(f"{emoji} **{test['name']}**\nStatus: {status}{cf_tag}\nBody: {body[:300]}", parse_mode="Markdown")
+            except Exception as e:
+                await update.message.reply_text(f"❌ **{test['name']}**\nError: {e}", parse_mode="Markdown")
 
 async def main():
     # Start web server
