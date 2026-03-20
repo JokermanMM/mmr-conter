@@ -60,6 +60,12 @@ async def set_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         steam_id = int(context.args[0])
+        
+        # Convert SteamID64 to Account ID if necessary
+        if steam_id > 76561197960265728:
+            steam_id = steam_id - 76561197960265728
+            logger.info(f"Converted SteamID64 to Account ID: {steam_id}")
+
         chat_id = update.effective_chat.id
         data = await stratz.get_latest_match(steam_id)
         if not data:
