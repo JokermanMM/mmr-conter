@@ -38,7 +38,14 @@ class DotaClient:
             return None
         
         player_name = player.get("profile", {}).get("personaname", "Unknown")
-        mmr_estimate = player.get("mmr_estimate", {}).get("estimate")
+        # Try multiple MMR sources
+        mmr_estimate = player.get("computed_mmr")
+        if not mmr_estimate:
+            mmr_est_obj = player.get("mmr_estimate")
+            if isinstance(mmr_est_obj, dict):
+                mmr_estimate = mmr_est_obj.get("estimate")
+        if mmr_estimate:
+            mmr_estimate = int(mmr_estimate)
         
         # Get recent matches
         url = f"{self.BASE_URL}/players/{steam_id}/recentMatches"
