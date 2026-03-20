@@ -3,7 +3,7 @@ import os
 import logging
 from telegram import Update, InputMediaPhoto
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from stratz_client import StratzClient
+from dota_client import DotaClient
 from data_manager import DataManager
 from dotenv import load_dotenv
 from aiohttp import web
@@ -20,15 +20,24 @@ logger = logging.getLogger(__name__)
 
 # Config from environment variables
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-STRATZ_TOKEN = os.environ.get("STRATZ_TOKEN")
-PORT = int(os.environ.get("PORT", 8080)) # Render provides PORT
+PORT = int(os.environ.get("PORT", 8080))
 
 if not BOT_TOKEN:
     logger.error("BOT_TOKEN not found in environment variables!")
     exit(1)
 
 db = DataManager()
-stratz = StratzClient(STRATZ_TOKEN)
+dota = DotaClient()
+
+# Hero name cache
+hero_cache = {}
+
+async def get_hero_name(hero_id: int) -> str:
+    if hero_id in hero_cache:
+        return hero_cache[hero_id]
+    name = await dota.get_hero_name(hero_id)
+    hero_cache[hero_id] = name
+    return name
 
 # --- Web Server for Render Free Tier ---
 async def handle_ping(request):
@@ -77,9 +86,7 @@ async def set_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     try:
-        raw_id = context.args[0]
-        # Remove any leading / if user made a mistake
-        raw_id = raw_id.strip('/')
+        raw_id = context.args[0].strip('/')
         steam_id = int(raw_id)
         
         # Convert SteamID64 to Account ID if necessary
@@ -87,31 +94,31 @@ async def set_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             steam_id = steam_id - 76561197960265728
 
         chat_id = update.effective_chat.id
-        await update.message.reply_text(f"⏳ Проверяю профиль `{steam_id}` в базе Stratz...")
+        await update.message.reply_text(f"⏳ Проверяю профиль `{steam_id}`...", parse_mode="Markdown")
         
-        data = await stratz.get_latest_match(steam_id)
+        data = await dota.get_latest_match(steam_id)
         if not data:
             await update.message.reply_text(
-                "❌ **Игрок не найден в Stratz.**\n\n"
-                "**Почему это может быть:**\n"
-                "1. Профиль скрыт настройками приватности в Доте (см. шаг 3).\n"
-                "2. Stratz еще не проиндексировал тебя.\n\n"
+                "❌ **Игрок не найден.**\n\n"
                 "**Что делать:**\n"
-                "Зайди на [stratz.com/players/" + str(steam_id) + "](https://stratz.com/players/" + str(steam_id) + ") и убедись, что там видны твои данные. Это заставит базу обновиться.",
+                "1. Убедись, что ID верный.\n"
+                "2. Включи «Общедоступную историю матчей» в настройках Доты.\n"
+                "3. Зайди на [opendota.com/players/" + str(steam_id) + "](https://www.opendota.com/players/" + str(steam_id) + ") чтобы обновить профиль.\n"
+                "4. Подожди 2-3 минуты и попробуй снова.",
                 parse_mode="Markdown",
                 disable_web_page_preview=True
             )
             return
         
         last_match_id = data["match"]["id"] if data["match"] else None
-        last_mmr = data["player_match"]["afterMmr"] if data["player_match"] else None
+        last_mmr = data.get("mmr_estimate")
         
         db.set_user(chat_id, steam_id, last_match_id, last_mmr)
         
         msg = (
             f"✅ **Привязано к {data['player_name']}!**\n"
             f"Отслеживание запущено.\n"
-            f"Текущий MMR: `{last_mmr if last_mmr else 'Скрыт'}`"
+            f"Оценка MMR: `{last_mmr if last_mmr else 'Неизвестно'}`"
         )
         await update.message.reply_text(msg, parse_mode="Markdown")
     except ValueError:
@@ -125,7 +132,7 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
     users = db.get_all_users()
     for chat_id, user_info in users.items():
         try:
-            data = await stratz.get_latest_match(user_info["steam_id"])
+            data = await dota.get_latest_match(user_info["steam_id"])
             if not data or not data["match"] or not data["player_match"]:
                 continue
             
@@ -133,17 +140,21 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
             if match_id != user_info.get("last_match_id"):
                 # New match found!
                 pm = data["player_match"]
-                hero_name = pm["hero"]["displayName"]
+                hero_id = pm.get("hero_id", 0)
+                hero_name = await get_hero_name(hero_id)
                 is_win = pm["isVictory"]
-                new_mmr = pm["afterMmr"]
                 kills = pm["numKills"]
                 deaths = pm["numDeaths"]
                 assists = pm["numAssists"]
+                gpm = pm.get("gold_per_min", 0)
+                xpm = pm.get("xp_per_min", 0)
+                
+                new_mmr = data.get("mmr_estimate")
                 
                 result_emoji = "🏆" if is_win else "💀"
                 result_text = "ПОБЕДА" if is_win else "ПОРАЖЕНИЕ"
                 
-                mmr_text = f"📈 MMR: `{new_mmr}`" if new_mmr else "📈 MMR: `Скрыт`"
+                mmr_text = f"📈 MMR (оценка): `{new_mmr}`" if new_mmr else ""
                 if new_mmr and user_info.get("last_mmr"):
                     diff = new_mmr - user_info["last_mmr"]
                     if diff != 0:
@@ -151,23 +162,21 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                         mmr_text += f" (**{diff_sign}{diff}**)"
                 
                 msg = (
-                    f"{result_emoji} **Обновление матча Dota 2**\n\n"
-                    f"👤 Игрок: **{data['player_name']}**\n"
-                    f"📊 Результат: **{result_text}**\n"
+                    f"{result_emoji} **{result_text}**\n\n"
                     f"🦸 Герой: **{hero_name}**\n"
-                    f"⚔️ Статистика: `{kills}/{deaths}/{assists}`\n"
+                    f"⚔️ KDA: `{kills}/{deaths}/{assists}`\n"
+                    f"💰 GPM/XPM: `{gpm}/{xpm}`\n"
                     f"{mmr_text}"
                 )
                 
                 await context.bot.send_message(chat_id=int(chat_id), text=msg, parse_mode="Markdown")
-                # Update DB
                 db.update_match(chat_id, match_id, new_mmr)
         except Exception as e:
             logger.error(f"Error monitoring {chat_id}: {e}")
 
 async def debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Debug command to test Stratz API directly."""
-    steam_id = 299539763  # Default test ID
+    """Debug command to test API directly."""
+    steam_id = 299539763
     if context.args:
         try:
             steam_id = int(context.args[0])
@@ -176,13 +185,8 @@ async def debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             pass
     
-    await update.message.reply_text(f"🔧 Тестирую API для ID: {steam_id}...")
-    
-    token_status = f"Token set: {bool(STRATZ_TOKEN)}, length: {len(STRATZ_TOKEN) if STRATZ_TOKEN else 0}"
-    await update.message.reply_text(f"🔑 {token_status}")
-    
-    result = await stratz.raw_query(steam_id)
-    # Split long message
+    await update.message.reply_text(f"🔧 Тестирую OpenDota API для ID: {steam_id}...")
+    result = await dota.raw_query(steam_id)
     for i in range(0, len(result), 4000):
         await update.message.reply_text(result[i:i+4000])
 
@@ -198,7 +202,7 @@ async def main():
     application.add_handler(CommandHandler("set_id", set_id_command))
     application.add_handler(CommandHandler("debug", debug_command))
     
-    # Job queue for polling
+    # Job queue for polling (every 3 minutes)
     job_queue = application.job_queue
     job_queue.run_repeating(monitor_matches, interval=180, first=10)
     
