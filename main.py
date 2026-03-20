@@ -1,7 +1,7 @@
 import asyncio
 import os
 import logging
-from telegram import Update, InputMediaPhoto
+from telegram import Update, InputMediaPhoto, BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from dota_client import DotaClient
 from data_manager import DataManager
@@ -299,6 +299,15 @@ async def main():
     async with application:
         await application.initialize()
         await application.start()
+        
+        # Set up the menu button and command autocomplete
+        await application.bot.set_my_commands([
+            BotCommand("start", "Инструкция и главное меню"),
+            BotCommand("set_id", "Привязать профиль (нужно написать /set_id <ID>)"),
+            BotCommand("set_mmr", "Обновить точный MMR (нужно написать /set_mmr <ММР>)"),
+            BotCommand("debug", "Проверить статус API")
+        ])
+        
         await application.updater.start_polling()
         while True:
             await asyncio.sleep(3600)
