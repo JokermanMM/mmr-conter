@@ -24,9 +24,6 @@ class DataManager:
         conn = self._get_connection()
         cursor = conn.cursor()
         
-        # SQLite uses 'CREATE TABLE IF NOT EXISTS'
-        # Postgres also supports it.
-        # Note: SQLite syntax for primary key and types is slightly different but compatible for basic types.
         query = '''
             CREATE TABLE IF NOT EXISTS users (
                 chat_id TEXT PRIMARY KEY,
@@ -36,6 +33,18 @@ class DataManager:
             )
         '''
         cursor.execute(query)
+        
+        # Migrations
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN manual_mmr INTEGER")
+        except Exception:
+            pass
+            
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN matches_since_calibration INTEGER DEFAULT 0")
+        except Exception:
+            pass
+            
         conn.commit()
         cursor.close()
         conn.close()
@@ -43,34 +52,46 @@ class DataManager:
     def get_user(self, chat_id):
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT steam_id, last_match_id, last_mmr FROM users WHERE chat_id = %s' if self.database_url else 'SELECT steam_id, last_match_id, last_mmr FROM users WHERE chat_id = ?', (str(chat_id),))
+        query = 'SELECT steam_id, last_match_id, last_mmr, manual_mmr, matches_since_calibration FROM users WHERE chat_id = %s' if self.database_url else 'SELECT steam_id, last_match_id, last_mmr, manual_mmr, matches_since_calibration FROM users WHERE chat_id = ?'
+        cursor.execute(query, (str(chat_id),))
         row = cursor.fetchone()
         cursor.close()
         conn.close()
         if row:
-            return {"steam_id": row[0], "last_match_id": row[1], "last_mmr": row[2]}
+            return {
+                "steam_id": row[0], 
+                "last_match_id": row[1], 
+                "last_mmr": row[2],
+                "manual_mmr": row[3],
+                "matches_since_calibration": row[4] or 0
+            }
         return None
 
     def get_all_users(self):
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT chat_id, steam_id, last_match_id, last_mmr FROM users')
+        cursor.execute('SELECT chat_id, steam_id, last_match_id, last_mmr, manual_mmr, matches_since_calibration FROM users')
         rows = cursor.fetchall()
         cursor.close()
         conn.close()
         users = {}
         for row in rows:
-            users[row[0]] = {"steam_id": row[1], "last_match_id": row[2], "last_mmr": row[3]}
+            users[row[0]] = {
+                "steam_id": row[1], 
+                "last_match_id": row[2], 
+                "last_mmr": row[3],
+                "manual_mmr": row[4],
+                "matches_since_calibration": row[5] or 0
+            }
         return users
 
     def set_user(self, chat_id, steam_id, last_match_id=None, last_mmr=None):
         conn = self._get_connection()
         cursor = conn.cursor()
         if self.database_url:
-            # Postgres UPSERT
             query = '''
-                INSERT INTO users (chat_id, steam_id, last_match_id, last_mmr)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO users (chat_id, steam_id, last_match_id, last_mmr, manual_mmr, matches_since_calibration)
+                VALUES (%s, %s, %s, %s, NULL, 0)
                 ON CONFLICT (chat_id) DO UPDATE 
                 SET steam_id = EXCLUDED.steam_id, 
                     last_match_id = EXCLUDED.last_match_id, 
@@ -78,24 +99,42 @@ class DataManager:
             '''
             cursor.execute(query, (str(chat_id), steam_id, last_match_id, last_mmr))
         else:
-            # SQLite UPSERT
             query = '''
-                INSERT OR REPLACE INTO users (chat_id, steam_id, last_match_id, last_mmr)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO users (chat_id, steam_id, last_match_id, last_mmr, manual_mmr, matches_since_calibration)
+                VALUES (?, ?, ?, ?, NULL, 0)
+                ON CONFLICT(chat_id) DO UPDATE SET
+                steam_id = excluded.steam_id,
+                last_match_id = excluded.last_match_id,
+                last_mmr = excluded.last_mmr
             '''
             cursor.execute(query, (str(chat_id), steam_id, last_match_id, last_mmr))
         conn.commit()
         cursor.close()
         conn.close()
 
-    def update_match(self, chat_id, last_match_id, last_mmr):
+    def set_manual_mmr(self, chat_id, mmr):
         conn = self._get_connection()
         cursor = conn.cursor()
         placeholder = "%s" if self.database_url else "?"
         cursor.execute(f'''
-            UPDATE users SET last_match_id = {placeholder}, last_mmr = {placeholder}
+            UPDATE users SET manual_mmr = {placeholder}, matches_since_calibration = 0
             WHERE chat_id = {placeholder}
-        ''', (last_match_id, last_mmr, str(chat_id)))
+        ''', (mmr, str(chat_id)))
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+    def update_match_and_mmr(self, chat_id, last_match_id, new_manual_mmr, matches_count):
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        placeholder = "%s" if self.database_url else "?"
+        cursor.execute(f'''
+            UPDATE users 
+            SET last_match_id = {placeholder}, 
+                manual_mmr = {placeholder},
+                matches_since_calibration = {placeholder}
+            WHERE chat_id = {placeholder}
+        ''', (last_match_id, new_manual_mmr, matches_count, str(chat_id)))
         conn.commit()
         cursor.close()
         conn.close()

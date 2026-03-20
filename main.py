@@ -117,14 +117,41 @@ async def set_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         msg = (
             f"✅ **Привязано к {data['player_name']}!**\n"
-            f"Отслеживание запущено.\n"
-            f"Оценка MMR: `{last_mmr if last_mmr else 'Неизвестно'}`"
+            f"Отслеживание матчей запущено.\n\n"
+            f"⚠️ **Важно:** Чтобы я мог точно считать твой рейтинг, "
+            f"введи свой текущий MMR командой:\n`/set_mmr <число>`\n"
+            f"*(например: /set_mmr 1690)*"
         )
         await update.message.reply_text(msg, parse_mode="Markdown")
     except ValueError:
         await update.message.reply_text("❌ ID должен быть числом. Пример: `/set_id 12345678`", parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Set ID error: {e}")
+        await update.message.reply_text("❌ Произошла ошибка. Попробуй позже.", parse_mode="Markdown")
+
+async def set_mmr_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("❌ Укажи свой текущий MMR: `/set_mmr 1695`", parse_mode="Markdown")
+        return
+    
+    try:
+        mmr = int(context.args[0])
+        chat_id = update.effective_chat.id
+        user = db.get_user(chat_id)
+        if not user:
+            await update.message.reply_text("❌ Сначала привяжи аккаунт с помощью `/set_id`.", parse_mode="Markdown")
+            return
+            
+        db.set_manual_mmr(chat_id, mmr)
+        await update.message.reply_text(
+            f"✅ MMR успешно установлен на `{mmr}`!\n"
+            f"Теперь я буду автоматически считать +25/-25 за каждый матч.", 
+            parse_mode="Markdown"
+        )
+    except ValueError:
+        await update.message.reply_text("❌ MMR должен быть числом. Пример: `/set_mmr 1695`", parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Set MMR error: {e}")
         await update.message.reply_text("❌ Произошла ошибка. Попробуй позже.", parse_mode="Markdown")
 
 async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
@@ -154,12 +181,24 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                 result_emoji = "🏆" if is_win else "💀"
                 result_text = "ПОБЕДА" if is_win else "ПОРАЖЕНИЕ"
                 
-                mmr_text = f"📈 MMR (оценка): `{new_mmr}`" if new_mmr else ""
-                if new_mmr and user_info.get("last_mmr"):
-                    diff = new_mmr - user_info["last_mmr"]
-                    if diff != 0:
-                        diff_sign = "+" if diff > 0 else ""
-                        mmr_text += f" (**{diff_sign}{diff}**)"
+                manual_mmr = user_info.get("manual_mmr")
+                matches_count = user_info.get("matches_since_calibration", 0)
+                
+                if manual_mmr is not None:
+                    diff = 25 if is_win else -25
+                    new_manual_mmr = manual_mmr + diff
+                    matches_count += 1
+                    
+                    diff_sign = "+" if diff > 0 else ""
+                    mmr_text = f"📈 Твой MMR: `{new_manual_mmr}` (**{diff_sign}{diff}**)"
+                    
+                    if matches_count >= 10:
+                        mmr_text += "\n\n🔄 *Прошло 10 матчей! Пожалуйста, обнови свой точный MMR командой /set_mmr <число> для калибровки точности бота.*"
+                    
+                    db.update_match_and_mmr(chat_id, match_id, new_manual_mmr, matches_count)
+                else:
+                    mmr_text = f"📈 Оценка MMR: `{new_mmr}`\n⚠️ *Установи точный MMR: /set_mmr <число>*"
+                    db.update_match(chat_id, match_id, new_mmr)
                 
                 msg = (
                     f"{result_emoji} **{result_text}**\n\n"
@@ -170,7 +209,6 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                 )
                 
                 await context.bot.send_message(chat_id=int(chat_id), text=msg, parse_mode="Markdown")
-                db.update_match(chat_id, match_id, new_mmr)
         except Exception as e:
             logger.error(f"Error monitoring {chat_id}: {e}")
 
@@ -251,6 +289,7 @@ async def main():
     # Handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("set_id", set_id_command))
+    application.add_handler(CommandHandler("set_mmr", set_mmr_command))
     application.add_handler(CommandHandler("debug", debug_command))
     
     # Job queue for polling (every 3 minutes)
