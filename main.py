@@ -240,7 +240,9 @@ async def main():
             BotCommand("set_mmr", "Обновить точный MMR (нужно написать /set_mmr <ММР>)")
         ])
         
-        await application.updater.start_polling()
+        # Wait a few seconds to let the old Render instance shut down completely to avoid Conflict errors
+        await asyncio.sleep(5)
+        await application.updater.start_polling(drop_pending_updates=True)
         while True:
             await asyncio.sleep(3600)
 
