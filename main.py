@@ -6,6 +6,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from stratz_client import StratzClient
 from data_manager import DataManager
 from dotenv import load_dotenv
+from aiohttp import web
 
 # Load .env for local development
 load_dotenv()
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 # Config from environment variables
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 STRATZ_TOKEN = os.environ.get("STRATZ_TOKEN")
+PORT = int(os.environ.get("PORT", 8080)) # Render provides PORT
 
 if not BOT_TOKEN:
     logger.error("BOT_TOKEN not found in environment variables!")
@@ -28,11 +30,25 @@ if not BOT_TOKEN:
 db = DataManager()
 stratz = StratzClient(STRATZ_TOKEN)
 
+# --- Web Server for Render Free Tier ---
+async def handle_ping(request):
+    return web.Response(text="Bot is alive!")
+
+async def start_web_server():
+    app = web.Application()
+    app.add_routes([web.get('/', handle_ping)])
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', PORT)
+    await site.start()
+    logger.info(f"Web server started on port {PORT}")
+
+# --- Bot Commands ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_msg = (
         "👋 **Добро пожаловать в Dota 2 MMR Counter!**\n\n"
         "Я буду отслеживать твои матчи и присылать изменения ММР.\n\n"
-        "Для начала привяжи свой **Steam ID** (его можно взять из ссылки на твой Dotabuff):\n"
+        "Для начала привяжи свой **Steam ID**:\n"
         "`/set_id 12345678`"
     )
     await update.message.reply_text(welcome_msg, parse_mode="Markdown")
@@ -45,92 +61,67 @@ async def set_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         steam_id = int(context.args[0])
         chat_id = update.effective_chat.id
-        
-        # Verify Steam ID with Stratz
         data = await stratz.get_latest_match(steam_id)
         if not data:
-            await update.message.reply_text("❌ Игрок не найден. Убедись, что 'Общедоступная история матчей' включена в игре.", parse_mode="Markdown")
+            await update.message.reply_text("❌ Игрок не найден.", parse_mode="Markdown")
             return
         
-        player_name = data["player_name"]
-        match = data["match"]
-        player_match = data["player_match"]
-        
-        last_match_id = match["id"] if match else None
-        last_mmr = player_match["afterMmr"] if player_match and player_match.get("afterMmr") else None
-        
+        last_match_id = data["match"]["id"] if data["match"] else None
+        last_mmr = data["player_match"]["afterMmr"] if data["player_match"] else None
         db.set_user(chat_id, steam_id, last_match_id, last_mmr)
         
-        msg = (
-            f"✅ **Привязано к {player_name}!**\n"
-            f"Отслеживание запущено. Последний матч: `{last_match_id}`\n"
-            f"Текущий MMR: `{last_mmr if last_mmr else 'Скрыт'}`"
-        )
-        await update.message.reply_text(msg, parse_mode="Markdown")
-    except ValueError:
-        await update.message.reply_text("❌ Неверный формат Steam ID.", parse_mode="Markdown")
+        await update.message.reply_text(f"✅ Привязано к {data['player_name']}!", parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Set ID error: {e}")
+        await update.message.reply_text("❌ Ошибка при привязке.", parse_mode="Markdown")
 
 async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
-    """Background task to poll for new matches."""
     users = db.get_all_users()
     for chat_id, user_info in users.items():
-        steam_id = user_info["steam_id"]
-        last_match_id = user_info.get("last_match_id")
-        last_mmr = user_info.get("last_mmr")
-        
-        data = await stratz.get_latest_match(steam_id)
+        data = await stratz.get_latest_match(user_info["steam_id"])
         if not data or not data["match"] or not data["player_match"]:
             continue
         
-        match = data["match"]
-        player_match = data["player_match"]
-        match_id = match["id"]
-        
-        if match_id != last_match_id:
-            # New match found!
-            hero_name = player_match["hero"]["displayName"]
-            is_win = player_match["isVictory"]
-            new_mmr = player_match["afterMmr"]
-            kills = player_match["numKills"]
-            deaths = player_match["numDeaths"]
-            assists = player_match["numAssists"]
-            
-            result_emoji = "🏆" if is_win else "💀"
-            result_text = "ПОБЕДА" if is_win else "ПОРАЖЕНИЕ"
-            
-            mmr_text = f"📈 MMR: `{new_mmr}`" if new_mmr else "📈 MMR: `Скрыт`"
-            if new_mmr and last_mmr:
-                diff = new_mmr - last_mmr
-                if diff != 0:
-                    diff_sign = "+" if diff > 0 else ""
-                    mmr_text += f" (**{diff_sign}{diff}**)"
+        match_id = data["match"]["id"]
+        if match_id != user_info.get("last_match_id"):
+            pm = data["player_match"]
+            res = "🏆 ПОБЕДА" if pm["isVictory"] else "💀 ПОРАЖЕНИЕ"
+            mmr_diff = ""
+            if pm["afterMmr"] and user_info.get("last_mmr"):
+                diff = pm["afterMmr"] - user_info["last_mmr"]
+                mmr_diff = f" (**{'+' if diff > 0 else ''}{diff}**)"
             
             msg = (
-                f"{result_emoji} **Обновление матча Dota 2**\n\n"
+                f"{res} **Обновление матча**\n"
                 f"👤 Игрок: **{data['player_name']}**\n"
-                f"📊 Результат: **{result_text}**\n"
-                f"🦸 Герой: **{hero_name}**\n"
-                f"⚔️ Статистика: `{kills}/{deaths}/{assists}`\n"
-                f"{mmr_text}"
+                f"🦸 Герой: **{pm['hero']['displayName']}**\n"
+                f"📈 MMR: `{pm['afterMmr']}`{mmr_diff}"
             )
-            
-            try:
-                await context.bot.send_message(chat_id=int(chat_id), text=msg, parse_mode="Markdown")
-                # Update DB
-                db.update_match(chat_id, match_id, new_mmr)
-            except Exception as e:
-                logger.error(f"Failed to send message to {chat_id}: {e}")
+            await context.bot.send_message(chat_id=int(chat_id), text=msg, parse_mode="Markdown")
+            db.update_match(chat_id, match_id, pm["afterMmr"])
 
-if __name__ == '__main__':
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
+async def main():
+    # Start web server
+    await start_web_server()
     
-    # Handlers
+    # Start bot
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("set_id", set_id_command))
     
-    # Job queue for polling (every 3 minutes)
     job_queue = application.job_queue
     job_queue.run_repeating(monitor_matches, interval=180, first=10)
     
-    logger.info("Bot started...")
-    application.run_polling()
+    async with application:
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling()
+        # Keep running until cancelled
+        while True:
+            await asyncio.sleep(3600)
+
+if __name__ == '__main__':
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        pass
