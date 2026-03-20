@@ -48,29 +48,24 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_msg = (
         "👋 **Добро пожаловать в Dota 2 MMR Counter!**\n\n"
         "Я буду отслеживать твои матчи и присылать изменения ММР.\n\n"
-        "**Как найти свой Steam ID:**\n"
-        "1. В Steam нажми на свой ник в правом верхнем углу.\n"
-        "2. Выбери пункт **«Об аккаунте»** (скриншот 1).\n"
-        "3. Скопируй **Steam ID**, который указан под твоим логином (скриншот 2).\n\n"
-        "После этого пришли мне ID командой:\n"
+        "**Как привязать аккаунт:**\n"
+        "1. В Steam нажми на ник -> **«Об аккаунте»** (скрин 1).\n"
+        "2. Скопируй **Steam ID** под логином (скрин 2).\n"
+        "3. В Dota 2 нажми настройки -> Сообщество -> **«Общедоступная история матчей»** (скрин 3).\n\n"
+        "После присылай ID командой:\n"
         "`/set_id <твой_id>`"
     )
     
     # Send screenshots if they exist
-    step1_path = os.path.join("media", "step1.png")
-    step2_path = os.path.join("media", "step2.png")
+    media = []
+    for i in range(1, 4):
+        path = os.path.join("media", f"step{i}.png")
+        if os.path.exists(path):
+            media.append(InputMediaPhoto(open(path, 'rb'), caption=f"Шаг {i}"))
     
-    if os.path.exists(step1_path) and os.path.exists(step2_path):
+    if media:
         try:
-            # We must open files in each call or use a more complex way for persistent files
-            with open(step1_path, 'rb') as f1, open(step2_path, 'rb') as f2:
-                await context.bot.send_media_group(
-                    chat_id=update.effective_chat.id,
-                    media=[
-                        InputMediaPhoto(f1, caption="1. Меню «Об аккаунте»"),
-                        InputMediaPhoto(f2, caption="2. Где находится Steam ID")
-                    ]
-                )
+            await context.bot.send_media_group(chat_id=update.effective_chat.id, media=media)
         except Exception as e:
             logger.error(f"Error sending media: {e}")
 
@@ -82,17 +77,30 @@ async def set_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     try:
-        steam_id = int(context.args[0])
+        raw_id = context.args[0]
+        # Remove any leading / if user made a mistake
+        raw_id = raw_id.strip('/')
+        steam_id = int(raw_id)
         
         # Convert SteamID64 to Account ID if necessary
         if steam_id > 76561197960265728:
             steam_id = steam_id - 76561197960265728
-            logger.info(f"Converted SteamID64 to Account ID: {steam_id}")
 
         chat_id = update.effective_chat.id
+        await update.message.reply_text(f"⏳ Проверяю профиль `{steam_id}` в базе Stratz...")
+        
         data = await stratz.get_latest_match(steam_id)
         if not data:
-            await update.message.reply_text("❌ Игрок не найден. Убедись, что 'Общедоступная история матчей' включена в игре.", parse_mode="Markdown")
+            await update.message.reply_text(
+                "❌ **Игрок не найден в Stratz.**\n\n"
+                "**Почему это может быть:**\n"
+                "1. Профиль скрыт настройками приватности в Доте (см. шаг 3).\n"
+                "2. Stratz еще не проиндексировал тебя.\n\n"
+                "**Что делать:**\n"
+                "Зайди на [stratz.com/players/" + str(steam_id) + "](https://stratz.com/players/" + str(steam_id) + ") и убедись, что там видны твои данные. Это заставит базу обновиться.",
+                parse_mode="Markdown",
+                disable_web_page_preview=True
+            )
             return
         
         last_match_id = data["match"]["id"] if data["match"] else None
@@ -102,58 +110,60 @@ async def set_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         msg = (
             f"✅ **Привязано к {data['player_name']}!**\n"
-            f"Отслеживание запущено. Последний матч: `{last_match_id}`\n"
+            f"Отслеживание запущено.\n"
             f"Текущий MMR: `{last_mmr if last_mmr else 'Скрыт'}`"
         )
         await update.message.reply_text(msg, parse_mode="Markdown")
+    except ValueError:
+        await update.message.reply_text("❌ ID должен быть числом. Пример: `/set_id 12345678`", parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Set ID error: {e}")
-        await update.message.reply_text("❌ Ошибка при привязке. Проверь ID.", parse_mode="Markdown")
+        await update.message.reply_text("❌ Произошла ошибка. Попробуй позже.", parse_mode="Markdown")
 
 async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
     """Background task to poll for new matches."""
     users = db.get_all_users()
     for chat_id, user_info in users.items():
-        data = await stratz.get_latest_match(user_info["steam_id"])
-        if not data or not data["match"] or not data["player_match"]:
-            continue
-        
-        match_id = data["match"]["id"]
-        if match_id != user_info.get("last_match_id"):
-            # New match found!
-            pm = data["player_match"]
-            hero_name = pm["hero"]["displayName"]
-            is_win = pm["isVictory"]
-            new_mmr = pm["afterMmr"]
-            kills = pm["numKills"]
-            deaths = pm["numDeaths"]
-            assists = pm["numAssists"]
+        try:
+            data = await stratz.get_latest_match(user_info["steam_id"])
+            if not data or not data["match"] or not data["player_match"]:
+                continue
             
-            result_emoji = "🏆" if is_win else "💀"
-            result_text = "ПОБЕДА" if is_win else "ПОРАЖЕНИЕ"
-            
-            mmr_text = f"📈 MMR: `{new_mmr}`" if new_mmr else "📈 MMR: `Скрыт`"
-            if new_mmr and user_info.get("last_mmr"):
-                diff = new_mmr - user_info["last_mmr"]
-                if diff != 0:
-                    diff_sign = "+" if diff > 0 else ""
-                    mmr_text += f" (**{diff_sign}{diff}**)"
-            
-            msg = (
-                f"{result_emoji} **Обновление матча Dota 2**\n\n"
-                f"👤 Игрок: **{data['player_name']}**\n"
-                f"📊 Результат: **{result_text}**\n"
-                f"🦸 Герой: **{hero_name}**\n"
-                f"⚔️ Статистика: `{kills}/{deaths}/{assists}`\n"
-                f"{mmr_text}"
-            )
-            
-            try:
+            match_id = data["match"]["id"]
+            if match_id != user_info.get("last_match_id"):
+                # New match found!
+                pm = data["player_match"]
+                hero_name = pm["hero"]["displayName"]
+                is_win = pm["isVictory"]
+                new_mmr = pm["afterMmr"]
+                kills = pm["numKills"]
+                deaths = pm["numDeaths"]
+                assists = pm["numAssists"]
+                
+                result_emoji = "🏆" if is_win else "💀"
+                result_text = "ПОБЕДА" if is_win else "ПОРАЖЕНИЕ"
+                
+                mmr_text = f"📈 MMR: `{new_mmr}`" if new_mmr else "📈 MMR: `Скрыт`"
+                if new_mmr and user_info.get("last_mmr"):
+                    diff = new_mmr - user_info["last_mmr"]
+                    if diff != 0:
+                        diff_sign = "+" if diff > 0 else ""
+                        mmr_text += f" (**{diff_sign}{diff}**)"
+                
+                msg = (
+                    f"{result_emoji} **Обновление матча Dota 2**\n\n"
+                    f"👤 Игрок: **{data['player_name']}**\n"
+                    f"📊 Результат: **{result_text}**\n"
+                    f"🦸 Герой: **{hero_name}**\n"
+                    f"⚔️ Статистика: `{kills}/{deaths}/{assists}`\n"
+                    f"{mmr_text}"
+                )
+                
                 await context.bot.send_message(chat_id=int(chat_id), text=msg, parse_mode="Markdown")
                 # Update DB
                 db.update_match(chat_id, match_id, new_mmr)
-            except Exception as e:
-                logger.error(f"Failed to send message to {chat_id}: {e}")
+        except Exception as e:
+            logger.error(f"Error monitoring {chat_id}: {e}")
 
 async def main():
     # Start web server
@@ -166,7 +176,7 @@ async def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("set_id", set_id_command))
     
-    # Job queue for polling (every 3 minutes)
+    # Job queue for polling
     job_queue = application.job_queue
     job_queue.run_repeating(monitor_matches, interval=180, first=10)
     
@@ -174,7 +184,6 @@ async def main():
         await application.initialize()
         await application.start()
         await application.updater.start_polling()
-        # Keep running until cancelled
         while True:
             await asyncio.sleep(3600)
 

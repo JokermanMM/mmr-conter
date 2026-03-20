@@ -12,6 +12,7 @@ class StratzClient:
             self.headers["Authorization"] = f"Bearer {api_token}"
 
     async def get_latest_match(self, steam_id: int):
+        # We'll use two queries or one combined to ensure we see the player even without matches
         query = """
         query($steamId: Long!) {
           player(id: $steamId) {
@@ -50,34 +51,23 @@ class StratzClient:
                 data = response.json()
                 
                 if "errors" in data:
-                    logger.error(f"GraphQL Errors: {data['errors']}")
-                    return None
+                    logger.error(f"Stratz GraphQL Errors: {data['errors']}")
+                    # If it's a specific error about matches but we have player info, we can proceed
                 
                 player_data = data.get("data", {}).get("player")
-                if not player_data:
+                if not player_data or not player_data.get("steamAccount"):
+                    logger.warning(f"No player data found for {steam_id}")
                     return None
                 
+                player_name = player_data["steamAccount"]["name"]
                 matches = player_data.get("matches", [])
-                if not matches:
-                    return {
-                        "player_name": player_data["steamAccount"]["name"], 
-                        "match": None, 
-                        "player_match": None
-                    }
                 
-                match = matches[0]
-                players = match.get("players", [])
+                match = matches[0] if matches else None
+                players = match.get("players", []) if match else []
                 player_match = players[0] if players else None
                 
-                if not player_match:
-                    return {
-                        "player_name": player_data["steamAccount"]["name"], 
-                        "match": match, 
-                        "player_match": None
-                    }
-                
                 return {
-                    "player_name": player_data["steamAccount"]["name"],
+                    "player_name": player_name,
                     "match": match,
                     "player_match": player_match
                 }
