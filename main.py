@@ -212,72 +212,6 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Error monitoring {chat_id}: {e}")
 
-async def debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Debug command to test API directly."""
-    steam_id = 299539763
-    if context.args:
-        try:
-            steam_id = int(context.args[0])
-            if steam_id > 76561197960265728:
-                steam_id = steam_id - 76561197960265728
-        except ValueError:
-            pass
-    
-    await update.message.reply_text(f"🔧 Тестирую API для ID: {steam_id}...")
-    
-    # Test 1: OpenDota (working)
-    result = await dota.raw_query(steam_id)
-    await update.message.reply_text(f"📗 **OpenDota:**\n{result[:2000]}", parse_mode="Markdown")
-    
-    # Test 2: Stratz GraphQL with browser User-Agent
-    stratz_token = os.environ.get("STRATZ_TOKEN", "")
-    import httpx
-    
-    tests = [
-        {
-            "name": "Stratz GraphQL (browser UA)",
-            "url": "https://api.stratz.com/graphql",
-            "method": "POST",
-            "headers": {
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Authorization": f"Bearer {stratz_token}",
-                "Accept": "application/json",
-                "Origin": "https://stratz.com",
-                "Referer": "https://stratz.com/"
-            },
-            "json": {"query": "{ player(steamAccountId: " + str(steam_id) + ") { steamAccount { name } matches(request: {take:1}) { id players(steamAccountId: " + str(steam_id) + ") { afterMmr isVictory hero { displayName } } } } }"}
-        },
-        {
-            "name": "Stratz REST /api/v1/Player",
-            "url": f"https://api.stratz.com/api/v1/Player/{steam_id}",
-            "method": "GET",
-            "headers": {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Authorization": f"Bearer {stratz_token}",
-                "Accept": "application/json"
-            },
-            "json": None
-        }
-    ]
-    
-    async with httpx.AsyncClient() as client:
-        for test in tests:
-            try:
-                if test["method"] == "POST":
-                    r = await client.post(test["url"], json=test["json"], headers=test["headers"], timeout=15.0)
-                else:
-                    r = await client.get(test["url"], headers=test["headers"], timeout=15.0)
-                
-                status = r.status_code
-                body = r.text[:500]
-                is_cf = "Just a moment" in body
-                emoji = "✅" if status == 200 else "❌"
-                cf_tag = " [CLOUDFLARE]" if is_cf else ""
-                
-                await update.message.reply_text(f"{emoji} **{test['name']}**\nStatus: {status}{cf_tag}\nBody: {body[:300]}", parse_mode="Markdown")
-            except Exception as e:
-                await update.message.reply_text(f"❌ **{test['name']}**\nError: {e}", parse_mode="Markdown")
 
 async def main():
     # Start web server
@@ -290,7 +224,6 @@ async def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("set_id", set_id_command))
     application.add_handler(CommandHandler("set_mmr", set_mmr_command))
-    application.add_handler(CommandHandler("debug", debug_command))
     
     # Job queue for polling (every 3 minutes)
     job_queue = application.job_queue
@@ -304,8 +237,7 @@ async def main():
         await application.bot.set_my_commands([
             BotCommand("start", "Инструкция и главное меню"),
             BotCommand("set_id", "Привязать профиль (нужно написать /set_id <ID>)"),
-            BotCommand("set_mmr", "Обновить точный MMR (нужно написать /set_mmr <ММР>)"),
-            BotCommand("debug", "Проверить статус API")
+            BotCommand("set_mmr", "Обновить точный MMR (нужно написать /set_mmr <ММР>)")
         ])
         
         await application.updater.start_polling()
