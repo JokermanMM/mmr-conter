@@ -32,17 +32,17 @@ dota = DotaClient()
 def get_rank_info(mmr):
     """Calculate Dota 2 rank tier and emoji from MMR."""
     if mmr is None:
-        return "Unknown", "❓"
+        return "Неизвестно", "❓"
     
     tiers = [
-        ("Herald", "🥉", 0),
-        ("Guardian", "🛡️", 770),
-        ("Crusader", "⚔️", 1540),
-        ("Archon", "⚡", 2310),
-        ("Legend", "💎", 3080),
-        ("Ancient", "🟣", 3850),
-        ("Divine", "👑", 4620),
-        ("Immortal", "🔥", 5420)
+        ("Рекрут", "🌑", 0),
+        ("Страж", "🛡️", 770),
+        ("Рыцарь", "⚔️", 1540),
+        ("Герой", "💠", 2310),
+        ("Легенда", "💎", 3080),
+        ("Властелин", "🏮", 3850),
+        ("Божество", "🌟", 4620),
+        ("Титан", "☀️", 5420)
     ]
     
     current_tier = tiers[0]
@@ -54,7 +54,7 @@ def get_rank_info(mmr):
             
     name, emoji, base_mmr = current_tier
     
-    if name == "Immortal":
+    if name == "Титан":
         return name, emoji
         
     # Calculate stars (154 MMR per star)
@@ -74,7 +74,7 @@ async def get_hero_info(hero_id: int) -> dict:
     
     # Internal name like npc_dota_hero_antimage -> antimage
     system_name = hero_data.get("name", "").replace("npc_dota_hero_", "")
-    img_url = f"https://api.opendota.com/apps/dota2/images/heroes/{system_name}_full.png" if system_name else None
+    img_url = f"https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/{system_name}.png" if system_name else None
     
     info = {"name": name, "img_url": img_url}
     hero_display_cache[hero_id] = info
@@ -230,7 +230,7 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                 gpm = pm.get("gold_per_min", 0)
                 xpm = pm.get("xp_per_min", 0)
                 
-                result_emoji = "🟩 ПОБЕДА" if is_win else "🟥 ПОРАЖЕНИЕ"
+                result_emoji = "✨ ПОБЕДА ✨" if is_win else "🟥 ПОРАЖЕНИЕ"
                 
                 manual_mmr = user_info.get("manual_mmr")
                 matches_count = user_info.get("matches_since_calibration", 0)
@@ -277,10 +277,10 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                             parse_mode="Markdown"
                         )
                     else:
-                        await context.bot.send_message(chat_id=int(chat_id), text=msg, parse_mode="Markdown")
+                        await context.bot.send_message(chat_id=int(chat_id), text=msg, parse_mode="Markdown", disable_web_page_preview=True)
                 except Exception as e:
                     logger.error(f"Error sending match msg: {e}")
-                    await context.bot.send_message(chat_id=int(chat_id), text=msg, parse_mode="Markdown")
+                    await context.bot.send_message(chat_id=int(chat_id), text=msg, parse_mode="Markdown", disable_web_page_preview=True)
         except Exception as e:
             logger.error(f"Error monitoring {chat_id}: {e}")
 
