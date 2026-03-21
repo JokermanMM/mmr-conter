@@ -29,15 +29,56 @@ if not BOT_TOKEN:
 db = DataManager()
 dota = DotaClient()
 
-# Hero name cache
-hero_cache = {}
+def get_rank_info(mmr):
+    """Calculate Dota 2 rank tier and emoji from MMR."""
+    if mmr is None:
+        return "Unknown", "❓"
+    
+    tiers = [
+        ("Herald", "🥉", 0),
+        ("Guardian", "🛡️", 770),
+        ("Crusader", "⚔️", 1540),
+        ("Archon", "⚡", 2310),
+        ("Legend", "💎", 3080),
+        ("Ancient", "🟣", 3850),
+        ("Divine", "👑", 4620),
+        ("Immortal", "🔥", 5420)
+    ]
+    
+    current_tier = tiers[0]
+    for tier in tiers:
+        if mmr >= tier[2]:
+            current_tier = tier
+        else:
+            break
+            
+    name, emoji, base_mmr = current_tier
+    
+    if name == "Immortal":
+        return name, emoji
+        
+    # Calculate stars (154 MMR per star)
+    stars = min(5, max(1, int((mmr - base_mmr) / 154) + 1))
+    return f"{name} {stars}", emoji
 
-async def get_hero_name(hero_id: int) -> str:
-    if hero_id in hero_cache:
-        return hero_cache[hero_id]
-    name = await dota.get_hero_name(hero_id)
-    hero_cache[hero_id] = name
-    return name
+# Global hero cache for display
+hero_display_cache = {}
+
+async def get_hero_info(hero_id: int) -> dict:
+    """Get hero name and image URL."""
+    if hero_id in hero_display_cache:
+        return hero_display_cache[hero_id]
+    
+    hero_data = await dota.get_hero_data(hero_id)
+    name = hero_data.get("localized_name", f"Hero #{hero_id}")
+    
+    # Internal name like npc_dota_hero_antimage -> antimage
+    system_name = hero_data.get("name", "").replace("npc_dota_hero_", "")
+    img_url = f"https://api.opendota.com/apps/dota2/images/heroes/{system_name}_full.png" if system_name else None
+    
+    info = {"name": name, "img_url": img_url}
+    hero_display_cache[hero_id] = info
+    return info
 
 # --- Web Server for Render Free Tier ---
 async def handle_ping(request):
@@ -115,12 +156,15 @@ async def set_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         db.set_user(chat_id, steam_id, last_match_id, last_mmr)
         
+        rank_name, rank_emoji = get_rank_info(last_mmr)
+        
         msg = (
             f"✅ **Привязано к {data['player_name']}!**\n"
             f"Отслеживание матчей запущено.\n\n"
-            f"⚠️ **Важно:** Чтобы я мог точно считать твой рейтинг, "
-            f"введи свой текущий MMR командой:\n`/set_mmr <число>`\n"
-            f"*(например: /set_mmr 1690)*"
+            f"🏅 Твой ранг: {rank_emoji} **{rank_name}**\n"
+            f"📈 Оценка MMR: `{last_mmr if last_mmr else 'Неизвестно'}`\n\n"
+            f"⚠️ **Важно:** Чтобы я считал текущий ММР точно (±25), "
+            f"введи свой реальный MMR командой:\n`/set_mmr <число>`"
         )
         await update.message.reply_text(msg, parse_mode="Markdown")
     except ValueError:
@@ -175,7 +219,10 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                 # New match found!
                 pm = data["player_match"]
                 hero_id = pm.get("hero_id", 0)
-                hero_name = await get_hero_name(hero_id)
+                hero_info = await get_hero_info(hero_id)
+                hero_name = hero_info["name"]
+                hero_img = hero_info["img_url"]
+                
                 is_win = pm["isVictory"]
                 kills = pm["numKills"]
                 deaths = pm["numDeaths"]
@@ -183,39 +230,57 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                 gpm = pm.get("gold_per_min", 0)
                 xpm = pm.get("xp_per_min", 0)
                 
-                new_mmr = data.get("mmr_estimate")
-                
-                result_emoji = "🏆" if is_win else "💀"
-                result_text = "ПОБЕДА" if is_win else "ПОРАЖЕНИЕ"
+                result_emoji = "🟩 ПОБЕДА" if is_win else "🟥 ПОРАЖЕНИЕ"
                 
                 manual_mmr = user_info.get("manual_mmr")
                 matches_count = user_info.get("matches_since_calibration", 0)
                 
+                mmr_change_text = ""
                 if manual_mmr is not None:
                     diff = 25 if is_win else -25
                     new_manual_mmr = manual_mmr + diff
                     matches_count += 1
                     
                     diff_sign = "+" if diff > 0 else ""
-                    mmr_text = f"📈 Твой MMR: `{new_manual_mmr}` (**{diff_sign}{diff}**)"
+                    rank_name, rank_emoji = get_rank_info(new_manual_mmr)
+                    
+                    mmr_change_text = (
+                        f"📊 **MMR:** `{new_manual_mmr}` (**{diff_sign}{diff}**)\n"
+                        f"🏅 **Ранг:** {rank_emoji} {rank_name}"
+                    )
                     
                     if matches_count >= 10:
-                        mmr_text += "\n\n🔄 *Прошло 10 матчей! Пожалуйста, обнови свой точный MMR командой /set_mmr <число> для калибровки точности бота.*"
+                        mmr_change_text += "\n\n🔄 *Пора обновить точный MMR: /set_mmr*"
                     
                     db.update_match_and_mmr(chat_id, match_id, new_manual_mmr, matches_count)
                 else:
-                    mmr_text = f"📈 Оценка MMR: `{new_mmr}`\n⚠️ *Установи точный MMR: /set_mmr <число>*"
+                    new_mmr = data.get("mmr_estimate")
+                    mmr_change_text = f"📈 Оценка MMR: `{new_mmr}`\n⚠️ *Установи MMR: /set_mmr*"
                     db.update_match(chat_id, match_id, new_mmr)
                 
                 msg = (
-                    f"{result_emoji} **{result_text}**\n\n"
-                    f"🦸 Герой: **{hero_name}**\n"
-                    f"⚔️ KDA: `{kills}/{deaths}/{assists}`\n"
-                    f"💰 GPM/XPM: `{gpm}/{xpm}`\n"
-                    f"{mmr_text}"
+                    f"**{result_emoji}**\n\n"
+                    f"🦸 **Герой:** {hero_name}\n"
+                    f"⚔️ **KDA:** `{kills} / {deaths} / {assists}`\n"
+                    f"💰 **GPM:** `{gpm}` | ✨ **XPM:** `{xpm}`\n\n"
+                    f"{mmr_change_text}\n\n"
+                    f"🔗 [OpenDota](https://www.opendota.com/matches/{match_id}) | "
+                    f"[Dotabuff](https://www.dotabuff.com/matches/{match_id})"
                 )
                 
-                await context.bot.send_message(chat_id=int(chat_id), text=msg, parse_mode="Markdown")
+                try:
+                    if hero_img:
+                        await context.bot.send_photo(
+                            chat_id=int(chat_id),
+                            photo=hero_img,
+                            caption=msg,
+                            parse_mode="Markdown"
+                        )
+                    else:
+                        await context.bot.send_message(chat_id=int(chat_id), text=msg, parse_mode="Markdown")
+                except Exception as e:
+                    logger.error(f"Error sending match msg: {e}")
+                    await context.bot.send_message(chat_id=int(chat_id), text=msg, parse_mode="Markdown")
         except Exception as e:
             logger.error(f"Error monitoring {chat_id}: {e}")
 

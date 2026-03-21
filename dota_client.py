@@ -12,6 +12,7 @@ class DotaClient:
             "User-Agent": "Dota2MMRBot/1.0",
             "Accept": "application/json"
         }
+        self.hero_cache = {}
 
     async def get_player(self, steam_id: int) -> dict | None:
         """Get player profile info."""
@@ -116,20 +117,26 @@ class DotaClient:
                     "player_match": None
                 }
 
+    async def get_hero_data(self, hero_id: int) -> dict:
+        """Get hero detailed data by ID."""
+        if not self.hero_cache:
+            url = f"{self.BASE_URL}/heroes"
+            async with httpx.AsyncClient() as client:
+                try:
+                    r = await client.get(url, headers=self.headers, timeout=15.0)
+                    if r.status_code == 200:
+                        heroes = r.json()
+                        for hero in heroes:
+                            self.hero_cache[hero["id"]] = hero
+                except Exception as e:
+                    logger.error(f"Error fetching heroes: {e}")
+        
+        return self.hero_cache.get(hero_id, {})
+
     async def get_hero_name(self, hero_id: int) -> str:
         """Get hero display name by ID."""
-        url = f"{self.BASE_URL}/heroes"
-        async with httpx.AsyncClient() as client:
-            try:
-                r = await client.get(url, headers=self.headers, timeout=15.0)
-                if r.status_code == 200:
-                    heroes = r.json()
-                    for hero in heroes:
-                        if hero.get("id") == hero_id:
-                            return hero.get("localized_name", f"Hero #{hero_id}")
-                return f"Hero #{hero_id}"
-            except Exception:
-                return f"Hero #{hero_id}"
+        hero = await self.get_hero_data(hero_id)
+        return hero.get("localized_name", f"Hero #{hero_id}")
 
     async def raw_query(self, steam_id: int) -> str:
         """Return raw API response for debugging."""
