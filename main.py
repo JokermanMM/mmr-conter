@@ -230,7 +230,7 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                 gpm = pm.get("gold_per_min", 0)
                 xpm = pm.get("xp_per_min", 0)
                 
-                result_emoji = "✨ ПОБЕДА ✨" if is_win else "🟥 ПОРАЖЕНИЕ"
+                result_emoji = "✨ ПОБЕДА ✨" if is_win else "💀 ПОРАЖЕНИЕ"
                 
                 manual_mmr = user_info.get("manual_mmr")
                 matches_count = user_info.get("matches_since_calibration", 0)
