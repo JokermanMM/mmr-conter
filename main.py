@@ -264,8 +264,7 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                     f"⚔️ **KDA:** `{kills} / {deaths} / {assists}`\n"
                     f"💰 **GPM:** `{gpm}` | ✨ **XPM:** `{xpm}`\n\n"
                     f"{mmr_change_text}\n\n"
-                    f"🔗 [OpenDota](https://www.opendota.com/matches/{match_id}) | "
-                    f"[Dotabuff](https://www.dotabuff.com/matches/{match_id})"
+                    f"🔗 [Dotabuff](https://www.dotabuff.com/matches/{match_id})"
                 )
                 
                 try:
