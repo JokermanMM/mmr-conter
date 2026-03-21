@@ -159,7 +159,14 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
     users = db.get_all_users()
     for chat_id, user_info in users.items():
         try:
-            data = await dota.get_latest_match(user_info["steam_id"])
+            steam_id = user_info["steam_id"]
+            
+            # Force OpenDota to fetch data from Steam API to avoid long delays
+            await dota.refresh_player(steam_id)
+            # Give OpenDota a second to process the parse
+            await asyncio.sleep(2)
+            
+            data = await dota.get_latest_match(steam_id)
             if not data or not data["match"] or not data["player_match"]:
                 continue
             

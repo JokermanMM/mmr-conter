@@ -30,6 +30,17 @@ class DotaClient:
                 logger.error(f"Error fetching player: {e}")
                 return None
 
+    async def refresh_player(self, steam_id: int) -> bool:
+        """Force OpenDota to sync with Steam API for this player."""
+        url = f"{self.BASE_URL}/players/{steam_id}/refresh"
+        async with httpx.AsyncClient() as client:
+            try:
+                r = await client.post(url, headers=self.headers, timeout=15.0)
+                return r.status_code == 200
+            except Exception as e:
+                logger.error(f"Error refreshing player: {e}")
+                return False
+
     async def get_latest_match(self, steam_id: int) -> dict | None:
         """Get latest match with player stats."""
         # First get player profile
