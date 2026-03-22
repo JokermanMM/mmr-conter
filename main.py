@@ -235,33 +235,58 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                 manual_mmr = user_info.get("manual_mmr")
                 matches_count = user_info.get("matches_since_calibration", 0)
                 
+                lobby_type = pm.get("lobby_type")
+                game_mode = pm.get("game_mode")
+                
+                # Ranked = 7, Turbo = 23 (game_mode)
+                is_ranked = (lobby_type == 7)
+                is_turbo = (game_mode == 23)
+                is_custom = (lobby_type in [4, 15]) or (game_mode in [15, 19])
+                
+                if is_custom:
+                    db.update_match(chat_id, match_id, user_info.get("last_mmr"))
+                    continue
+                
+                match_type_label = ""
+                if is_turbo:
+                    match_type_label = " ⚡️ (Турбо)"
+                elif not is_ranked:
+                    match_type_label = " 🎮 (Обычный)"
+                
                 mmr_change_text = ""
                 if manual_mmr is not None:
-                    diff = 25 if is_win else -25
-                    new_manual_mmr = manual_mmr + diff
-                    matches_count += 1
-                    
-                    diff_sign = "+" if diff > 0 else ""
-                    rank_name, rank_emoji = get_rank_info(new_manual_mmr)
-                    
-                    mmr_change_text = (
-                        f"📊 **MMR:** `{new_manual_mmr}` (**{diff_sign}{diff}**)\n"
-                        f"🏅 **Ранг:** {rank_emoji} {rank_name}"
-                    )
+                    # Only change MMR if it's Ranked AND NOT Turbo
+                    if is_ranked and not is_turbo:
+                        diff = 25 if is_win else -25
+                        new_manual_mmr = manual_mmr + diff
+                        matches_count += 1
+                        diff_sign = "+" if diff > 0 else ""
+                        rank_name, rank_emoji = get_rank_info(new_manual_mmr)
+                        
+                        mmr_change_text = (
+                            f"💠 **ММР:** `{new_manual_mmr}` (**{diff_sign}{diff}**)\n"
+                            f"🏆 **Ранг:** {rank_emoji} {rank_name}"
+                        )
+                        db.update_match_and_mmr(chat_id, match_id, new_manual_mmr, matches_count)
+                    else:
+                        rank_name, rank_emoji = get_rank_info(manual_mmr)
+                        mmr_change_text = (
+                            f"💠 **ММР:** `{manual_mmr}` (без изменений)\n"
+                            f"🏆 **Ранг:** {rank_emoji} {rank_name}"
+                        )
+                        db.update_match(chat_id, match_id, user_info.get("last_mmr"))
                     
                     if matches_count >= 10:
                         mmr_change_text += "\n\n🔄 *Пора обновить точный MMR: /set_mmr*"
-                    
-                    db.update_match_and_mmr(chat_id, match_id, new_manual_mmr, matches_count)
                 else:
                     new_mmr = data.get("mmr_estimate")
                     mmr_change_text = f"📈 Оценка MMR: `{new_mmr}`\n⚠️ *Установи MMR: /set_mmr*"
                     db.update_match(chat_id, match_id, new_mmr)
                 
                 msg = (
-                    f"**{result_emoji}**\n\n"
+                    f"**{result_emoji}{match_type_label}**\n\n"
                     f"🦸 **Герой:** {hero_name}\n"
-                    f"⚔️ **KDA:** `{kills} / {deaths} / {assists}`\n"
+                    f"🩸 **KDA:** `{kills} / {deaths} / {assists}`\n"
                     f"💰 **GPM:** `{gpm}` | ✨ **XPM:** `{xpm}`\n\n"
                     f"{mmr_change_text}\n\n"
                     f"🔗 [Dotabuff](https://www.dotabuff.com/matches/{match_id})"

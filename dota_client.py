@@ -106,6 +106,8 @@ class DotaClient:
                         "numAssists": latest.get("assists", 0),
                         "xp_per_min": latest.get("xp_per_min", 0),
                         "gold_per_min": latest.get("gold_per_min", 0),
+                        "lobby_type": latest.get("lobby_type"),
+                        "game_mode": latest.get("game_mode")
                     }
                 }
             except Exception as e:
