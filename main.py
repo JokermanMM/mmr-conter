@@ -198,6 +198,57 @@ async def set_mmr_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Set MMR error: {e}")
         await update.message.reply_text("❌ Произошла ошибка. Попробуй позже.", parse_mode="Markdown")
 
+async def test_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Sends a mock match result for testing UI tweaks."""
+    chat_id = update.effective_chat.id
+    
+    # Example mock data
+    is_win = True
+    hero_id = 71  # Spirit Breaker
+    kills, deaths, assists = 12, 2, 8
+    gpm, xpm = 750, 820
+    match_id = 7123456789
+    
+    hero_info = await get_hero_info(hero_id)
+    hero_name = hero_info["name"]
+    hero_img = hero_info["img_url"]
+    
+    result_emoji = "✨ ПОБЕДА ✨" if is_win else "💀 ПОРАЖЕНИЕ"
+    match_type_label = " 🧪 (Тест)"
+    
+    user = db.get_user(chat_id)
+    manual_mmr = user.get("manual_mmr") if user else 1500
+    
+    rank_name, rank_emoji = get_rank_info(manual_mmr + 25)
+    
+    mmr_change_text = (
+        f"💠 **ММР:** `{manual_mmr + 25}` (**+25**)\n"
+        f"🏆 **Ранг:** {rank_emoji} {rank_name}"
+    )
+    
+    msg = (
+        f"**{result_emoji}{match_type_label}**\n\n"
+        f"🦸 **Герой:** {hero_name}\n"
+        f"🩸 **KDA:** `{kills} / {deaths} / {assists}`\n"
+        f"💰 **GPM:** `{gpm}` | ✨ **XPM:** `{xpm}`\n\n"
+        f"{mmr_change_text}\n\n"
+        f"🔗 [Dotabuff](https://www.dotabuff.com/matches/{match_id})"
+    )
+    
+    try:
+        if hero_img:
+            await context.bot.send_photo(
+                chat_id=chat_id,
+                photo=hero_img,
+                caption=msg,
+                parse_mode="Markdown"
+            )
+        else:
+            await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown", disable_web_page_preview=True)
+    except Exception as e:
+        logger.error(f"Error sending test msg: {e}")
+        await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown", disable_web_page_preview=True)
+
 async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
     """Background task to poll for new matches."""
     users = db.get_all_users()
@@ -320,6 +371,7 @@ async def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("set_id", set_id_command))
     application.add_handler(CommandHandler("set_mmr", set_mmr_command))
+    application.add_handler(CommandHandler("test", test_msg_command))
     
     # Job queue for polling (every 3 minutes)
     job_queue = application.job_queue
@@ -333,7 +385,8 @@ async def main():
         await application.bot.set_my_commands([
             BotCommand("start", "Инструкция и главное меню"),
             BotCommand("set_id", "Привязать профиль (нужно написать /set_id <ID>)"),
-            BotCommand("set_mmr", "Обновить точный MMR (нужно написать /set_mmr <ММР>)")
+            BotCommand("set_mmr", "Обновить точный MMR (нужно написать /set_mmr <ММР>)"),
+            BotCommand("test", "Тест: отправить пример уведомления о матче")
         ])
         
         # Wait a few seconds to let the old Render instance shut down completely to avoid Conflict errors
