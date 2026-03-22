@@ -222,15 +222,15 @@ async def test_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rank_name, rank_emoji = get_rank_info(manual_mmr + 25)
     
     mmr_change_text = (
-        f"💠 **ММР:** `{manual_mmr + 25}` (**+25**)\n"
+        f"🎰 **ММР:** `{manual_mmr + 25}` (**+25**)\n"
         f"🏆 **Ранг:** {rank_emoji} {rank_name}"
     )
     
     msg = (
         f"**{result_emoji}{match_type_label}**\n\n"
-        f"🦸 **Герой:** {hero_name}\n"
+        f"👾 **Герой:** {hero_name}\n"
         f"🩸 **KDA:** `{kills} / {deaths} / {assists}`\n"
-        f"💰 **GPM:** `{gpm}` | ✨ **XPM:** `{xpm}`\n\n"
+        f"💰 **GPM:** `{gpm}` | 🎓 **XPM:** `{xpm}`\n\n"
         f"{mmr_change_text}\n\n"
         f"🔗 [Dotabuff](https://www.dotabuff.com/matches/{match_id})"
     )
@@ -315,14 +315,14 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                         rank_name, rank_emoji = get_rank_info(new_manual_mmr)
                         
                         mmr_change_text = (
-                            f"💠 **ММР:** `{new_manual_mmr}` (**{diff_sign}{diff}**)\n"
+                            f"🎰 **ММР:** `{new_manual_mmr}` (**{diff_sign}{diff}**)\n"
                             f"🏆 **Ранг:** {rank_emoji} {rank_name}"
                         )
                         db.update_match_and_mmr(chat_id, match_id, new_manual_mmr, matches_count)
                     else:
                         rank_name, rank_emoji = get_rank_info(manual_mmr)
                         mmr_change_text = (
-                            f"💠 **ММР:** `{manual_mmr}` (без изменений)\n"
+                            f"🎰 **ММР:** `{manual_mmr}` (без изменений)\n"
                             f"🏆 **Ранг:** {rank_emoji} {rank_name}"
                         )
                         db.update_match(chat_id, match_id, user_info.get("last_mmr"))
