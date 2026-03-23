@@ -30,36 +30,37 @@ db = DataManager()
 dota = DotaClient()
 
 def get_rank_info(mmr):
-    """Calculate Dota 2 rank tier and emoji from MMR."""
+    """Calculate Dota 2 rank tier and local image ID from MMR."""
     if mmr is None:
-        return "Неизвестно", "❓"
+        return "Неизвестно", None
     
     tiers = [
-        ("Рекрут", "🌑", 0),
-        ("Страж", "🛡️", 770),
-        ("Рыцарь", "⚔️", 1540),
-        ("Герой", "💠", 2310),
-        ("Легенда", "💎", 3080),
-        ("Властелин", "🏮", 3850),
-        ("Божество", "🌟", 4620),
-        ("Титан", "☀️", 5420)
+        ("Рекрут", 0, 0),
+        ("Страж", 770, 1),
+        ("Рыцарь", 1540, 2),
+        ("Герой", 2310, 3),
+        ("Легенда", 3080, 4),
+        ("Властелин", 3850, 5),
+        ("Божество", 4620, 6)
     ]
     
+    if mmr >= 5420:
+        return "Титан", 36
+        
     current_tier = tiers[0]
     for tier in tiers:
-        if mmr >= tier[2]:
+        if mmr >= tier[1]:
             current_tier = tier
         else:
             break
             
-    name, emoji, base_mmr = current_tier
+    name, base_mmr, tier_idx = current_tier
     
-    if name == "Титан":
-        return name, emoji
-        
     # Calculate stars (154 MMR per star)
     stars = min(5, max(1, int((mmr - base_mmr) / 154) + 1))
-    return f"{name} {stars}", emoji
+    image_id = tier_idx * 5 + stars
+    
+    return f"{name} {stars}", image_id
 
 # Global hero cache for display
 hero_display_cache = {}
@@ -156,12 +157,12 @@ async def set_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         db.set_user(chat_id, steam_id, last_match_id, last_mmr)
         
-        rank_name, rank_emoji = get_rank_info(last_mmr)
+        rank_name, rank_icon_id = get_rank_info(last_mmr)
         
         msg = (
             f"✅ **Привязано к {data['player_name']}!**\n"
             f"Отслеживание матчей запущено.\n\n"
-            f"🏅 Твой ранг: {rank_emoji} **{rank_name}**\n"
+            f"🏆 Твой ранг: **{rank_name}**\n"
             f"📈 Оценка MMR: `{last_mmr if last_mmr else 'Неизвестно'}`\n\n"
             f"⚠️ **Важно:** Чтобы я считал текущий ММР точно (±25), "
             f"введи свой реальный MMR командой:\n`/set_mmr <число>`"
@@ -219,11 +220,11 @@ async def test_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = db.get_user(chat_id)
     manual_mmr = user.get("manual_mmr") if user else 1500
     
-    rank_name, rank_emoji = get_rank_info(manual_mmr + 25)
+    rank_name, rank_icon_id = get_rank_info(manual_mmr + 25)
     
     mmr_change_text = (
         f"🎰 **ММР:** `{manual_mmr + 25}` (**+25**)\n"
-        f"🏆 **Ранг:** {rank_emoji} {rank_name}"
+        f"🏆 **Ранг:** {rank_name}"
     )
     
     msg = (
@@ -236,13 +237,26 @@ async def test_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     try:
+        media = []
         if hero_img:
-            await context.bot.send_photo(
-                chat_id=chat_id,
-                photo=hero_img,
-                caption=msg,
-                parse_mode="Markdown"
-            )
+            media.append(InputMediaPhoto(hero_img, caption=msg, parse_mode="Markdown"))
+        
+        if rank_icon_id:
+            rank_path = os.path.join("media", "ranks", f"{rank_icon_id}.png")
+            if os.path.exists(rank_path):
+                if not media:
+                    media.append(InputMediaPhoto(open(rank_path, 'rb'), caption=msg, parse_mode="Markdown"))
+                else:
+                    media.append(InputMediaPhoto(open(rank_path, 'rb')))
+        
+        if len(media) > 1:
+            await context.bot.send_media_group(chat_id=chat_id, media=media)
+        elif len(media) == 1:
+            if hero_img and not rank_icon_id:
+                await context.bot.send_photo(chat_id=chat_id, photo=hero_img, caption=msg, parse_mode="Markdown")
+            else:
+                rank_path = os.path.join("media", "ranks", f"{rank_icon_id}.png")
+                await context.bot.send_photo(chat_id=chat_id, photo=open(rank_path, 'rb'), caption=msg, parse_mode="Markdown")
         else:
             await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown", disable_web_page_preview=True)
     except Exception as e:
@@ -312,18 +326,18 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                         new_manual_mmr = manual_mmr + diff
                         matches_count += 1
                         diff_sign = "+" if diff > 0 else ""
-                        rank_name, rank_emoji = get_rank_info(new_manual_mmr)
+                        rank_name, rank_icon_id = get_rank_info(new_manual_mmr)
                         
                         mmr_change_text = (
                             f"🎰 **ММР:** `{new_manual_mmr}` (**{diff_sign}{diff}**)\n"
-                            f"🏆 **Ранг:** {rank_emoji} {rank_name}"
+                            f"🏆 **Ранг:** {rank_name}"
                         )
                         db.update_match_and_mmr(chat_id, match_id, new_manual_mmr, matches_count)
                     else:
-                        rank_name, rank_emoji = get_rank_info(manual_mmr)
+                        rank_name, rank_icon_id = get_rank_info(manual_mmr)
                         mmr_change_text = (
                             f"🎰 **ММР:** `{manual_mmr}` (без изменений)\n"
-                            f"🏆 **Ранг:** {rank_emoji} {rank_name}"
+                            f"🏆 **Ранг:** {rank_name}"
                         )
                         db.update_match(chat_id, match_id, user_info.get("last_mmr"))
                     
@@ -331,26 +345,40 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                         mmr_change_text += "\n\n🔄 *Пора обновить точный MMR: /set_mmr*"
                 else:
                     new_mmr = data.get("mmr_estimate")
+                    rank_icon_id = None
                     mmr_change_text = f"📈 Оценка MMR: `{new_mmr}`\n⚠️ *Установи MMR: /set_mmr*"
                     db.update_match(chat_id, match_id, new_mmr)
                 
                 msg = (
                     f"**{result_emoji}{match_type_label}**\n\n"
-                    f"🦸 **Герой:** {hero_name}\n"
+                    f"👾 **Герой:** {hero_name}\n"
                     f"🩸 **KDA:** `{kills} / {deaths} / {assists}`\n"
-                    f"💰 **GPM:** `{gpm}` | ✨ **XPM:** `{xpm}`\n\n"
+                    f"💰 **GPM:** `{gpm}` | 🎓 **XPM:** `{xpm}`\n\n"
                     f"{mmr_change_text}\n\n"
                     f"🔗 [Dotabuff](https://www.dotabuff.com/matches/{match_id})"
                 )
                 
                 try:
+                    media = []
                     if hero_img:
-                        await context.bot.send_photo(
-                            chat_id=int(chat_id),
-                            photo=hero_img,
-                            caption=msg,
-                            parse_mode="Markdown"
-                        )
+                        media.append(InputMediaPhoto(hero_img, caption=msg, parse_mode="Markdown"))
+                    
+                    if rank_icon_id:
+                        rank_path = os.path.join("media", "ranks", f"{rank_icon_id}.png")
+                        if os.path.exists(rank_path):
+                            if not media:
+                                media.append(InputMediaPhoto(open(rank_path, 'rb'), caption=msg, parse_mode="Markdown"))
+                            else:
+                                media.append(InputMediaPhoto(open(rank_path, 'rb')))
+                    
+                    if len(media) > 1:
+                        await context.bot.send_media_group(chat_id=int(chat_id), media=media)
+                    elif len(media) == 1:
+                        if hero_img and not rank_icon_id:
+                            await context.bot.send_photo(chat_id=int(chat_id), photo=hero_img, caption=msg, parse_mode="Markdown")
+                        else:
+                            rank_path = os.path.join("media", "ranks", f"{rank_icon_id}.png")
+                            await context.bot.send_photo(chat_id=int(chat_id), photo=open(rank_path, 'rb'), caption=msg, parse_mode="Markdown")
                     else:
                         await context.bot.send_message(chat_id=int(chat_id), text=msg, parse_mode="Markdown", disable_web_page_preview=True)
                 except Exception as e:
