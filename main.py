@@ -7,6 +7,9 @@ from dota_client import DotaClient
 from data_manager import DataManager
 from dotenv import load_dotenv
 from aiohttp import web
+import aiohttp
+import io
+from PIL import Image
 
 # Load .env for local development
 load_dotenv()
@@ -61,6 +64,47 @@ def get_rank_info(mmr):
     image_id = tier_idx * 5 + stars
     
     return f"{name} {stars}", image_id
+
+async def generate_composite_image(hero_img_url, rank_icon_id):
+    """Downloads hero image and overlays the rank icon in the corner."""
+    if not hero_img_url:
+        return None
+        
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(hero_img_url) as resp:
+                if resp.status != 200:
+                    return None
+                hero_data = await resp.read()
+                
+        hero_img = Image.open(io.BytesIO(hero_data)).convert("RGBA")
+        
+        if rank_icon_id:
+            rank_path = os.path.join("media", "ranks", f"{rank_icon_id}.png")
+            if os.path.exists(rank_path):
+                rank_img = Image.open(rank_path).convert("RGBA")
+                
+                # Scale rank image to ~40% of hero image height
+                target_height = int(hero_img.height * 0.45)
+                aspect_ratio = rank_img.width / rank_img.height
+                target_width = int(target_height * aspect_ratio)
+                rank_img = rank_img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                
+                # Paste in bottom right corner with some padding
+                padding = int(hero_img.height * 0.05)
+                x = hero_img.width - rank_img.width - padding
+                y = hero_img.height - rank_img.height - padding
+                
+                hero_img.paste(rank_img, (x, y), rank_img)
+        
+        output = io.BytesIO()
+        # Convert back to RGB for typical saving, but preserving RGBA if PNG format is used
+        hero_img.save(output, format="PNG")
+        output.seek(0)
+        return output
+    except Exception as e:
+        logger.error(f"Error generating composite image: {e}")
+        return None
 
 # Global hero cache for display
 hero_display_cache = {}
@@ -237,26 +281,12 @@ async def test_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     try:
-        media = []
-        if hero_img:
-            media.append(InputMediaPhoto(hero_img, caption=msg, parse_mode="Markdown"))
+        composite_io = await generate_composite_image(hero_img, rank_icon_id)
         
-        if rank_icon_id:
-            rank_path = os.path.join("media", "ranks", f"{rank_icon_id}.png")
-            if os.path.exists(rank_path):
-                if not media:
-                    media.append(InputMediaPhoto(open(rank_path, 'rb'), caption=msg, parse_mode="Markdown"))
-                else:
-                    media.append(InputMediaPhoto(open(rank_path, 'rb')))
-        
-        if len(media) > 1:
-            await context.bot.send_media_group(chat_id=chat_id, media=media)
-        elif len(media) == 1:
-            if hero_img and not rank_icon_id:
-                await context.bot.send_photo(chat_id=chat_id, photo=hero_img, caption=msg, parse_mode="Markdown")
-            else:
-                rank_path = os.path.join("media", "ranks", f"{rank_icon_id}.png")
-                await context.bot.send_photo(chat_id=chat_id, photo=open(rank_path, 'rb'), caption=msg, parse_mode="Markdown")
+        if composite_io:
+            await context.bot.send_photo(chat_id=chat_id, photo=composite_io, caption=msg, parse_mode="Markdown")
+        elif hero_img:
+            await context.bot.send_photo(chat_id=chat_id, photo=hero_img, caption=msg, parse_mode="Markdown")
         else:
             await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown", disable_web_page_preview=True)
     except Exception as e:
@@ -359,26 +389,12 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                 )
                 
                 try:
-                    media = []
-                    if hero_img:
-                        media.append(InputMediaPhoto(hero_img, caption=msg, parse_mode="Markdown"))
+                    composite_io = await generate_composite_image(hero_img, rank_icon_id)
                     
-                    if rank_icon_id:
-                        rank_path = os.path.join("media", "ranks", f"{rank_icon_id}.png")
-                        if os.path.exists(rank_path):
-                            if not media:
-                                media.append(InputMediaPhoto(open(rank_path, 'rb'), caption=msg, parse_mode="Markdown"))
-                            else:
-                                media.append(InputMediaPhoto(open(rank_path, 'rb')))
-                    
-                    if len(media) > 1:
-                        await context.bot.send_media_group(chat_id=int(chat_id), media=media)
-                    elif len(media) == 1:
-                        if hero_img and not rank_icon_id:
-                            await context.bot.send_photo(chat_id=int(chat_id), photo=hero_img, caption=msg, parse_mode="Markdown")
-                        else:
-                            rank_path = os.path.join("media", "ranks", f"{rank_icon_id}.png")
-                            await context.bot.send_photo(chat_id=int(chat_id), photo=open(rank_path, 'rb'), caption=msg, parse_mode="Markdown")
+                    if composite_io:
+                        await context.bot.send_photo(chat_id=int(chat_id), photo=composite_io, caption=msg, parse_mode="Markdown")
+                    elif hero_img:
+                        await context.bot.send_photo(chat_id=int(chat_id), photo=hero_img, caption=msg, parse_mode="Markdown")
                     else:
                         await context.bot.send_message(chat_id=int(chat_id), text=msg, parse_mode="Markdown", disable_web_page_preview=True)
                 except Exception as e:

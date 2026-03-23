@@ -3,3 +3,4 @@ httpx
 python-dotenv
 aiohttp
 psycopg2-binary
+Pillow
