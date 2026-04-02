@@ -65,8 +65,8 @@ def get_rank_info(mmr):
     
     return f"{name} {stars}", image_id
 
-async def generate_composite_image(hero_img_url, rank_icon_id):
-    """Downloads hero image and overlays the rank icon in the corner."""
+async def generate_composite_image(hero_img_url, rank_icon_id, items_urls=None, neutral_url=None):
+    """Downloads hero image and overlays the rank icon, plus appends items bar underneath."""
     if not hero_img_url:
         return None
         
@@ -76,9 +76,41 @@ async def generate_composite_image(hero_img_url, rank_icon_id):
                 if resp.status != 200:
                     return None
                 hero_data = await resp.read()
+            
+            items_data = []
+            if items_urls:
+                for url in items_urls:
+                    if url:
+                        try:
+                            r = await session.get(url)
+                            items_data.append(await r.read() if r.status == 200 else None)
+                        except:
+                            items_data.append(None)
+                    else:
+                        items_data.append(None)
+            
+            neutral_data = None
+            if neutral_url:
+                try:
+                    r = await session.get(neutral_url)
+                    if r.status == 200:
+                        neutral_data = await r.read()
+                except:
+                    pass
                 
         hero_img = Image.open(io.BytesIO(hero_data)).convert("RGBA")
         
+        # Determine items layout area
+        # Hero image is typically 256x144. We will add a bottom bar of ~35px height.
+        has_items = any(items_data) or neutral_data
+        item_bar_height = 36 if has_items else 0
+        final_height = hero_img.height + item_bar_height
+        
+        # Create new canvas
+        canvas = Image.new("RGBA", (hero_img.width, final_height), (20, 20, 20, 255))
+        canvas.paste(hero_img, (0, 0))
+        
+        # Paste Rank Icon (bottom right of the HERO area, not canvas)
         if rank_icon_id:
             rank_path = os.path.join("media", "ranks", f"{rank_icon_id}.png")
             if os.path.exists(rank_path):
@@ -90,16 +122,43 @@ async def generate_composite_image(hero_img_url, rank_icon_id):
                 target_width = int(target_height * aspect_ratio)
                 rank_img = rank_img.resize((target_width, target_height), Image.Resampling.LANCZOS)
                 
-                # Paste in bottom right corner with some padding
+                # Paste in bottom right corner of the HERO image (above item bar)
                 padding = int(hero_img.height * 0.05)
                 x = hero_img.width - rank_img.width - padding
                 y = hero_img.height - rank_img.height - padding
                 
-                hero_img.paste(rank_img, (x, y), rank_img)
-        
+                canvas.paste(rank_img, (x, y), rank_img)
+                
+        # Paste Items
+        if has_items:
+            # We have 6 main items and 1 neutral. Let's arrange them.
+            # Total width = 256. 6 items * 34 wide = 204. Gap = 2. 
+            item_w = 34
+            item_h = int(item_w * 64/85) # native aspect ratio is roughly 85:64
+            
+            start_x = 4
+            start_y = hero_img.height + (item_bar_height - item_h) // 2
+            
+            for i, img_bytes in enumerate(items_data):
+                if img_bytes:
+                    item_img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+                    item_img = item_img.resize((item_w, item_h), Image.Resampling.LANCZOS)
+                    canvas.paste(item_img, (start_x + i * (item_w + 2), start_y), item_img)
+            
+            if neutral_data:
+                neut_img = Image.open(io.BytesIO(neutral_data)).convert("RGBA")
+                neut_w = 30
+                neut_h = int(neut_w * 64/85)
+                neut_img = neut_img.resize((neut_w, neut_h), Image.Resampling.LANCZOS)
+                
+                # Create a radial mask or just paste it
+                n_x = hero_img.width - neut_w - 4
+                n_y = hero_img.height + (item_bar_height - neut_h) // 2
+                canvas.paste(neut_img, (n_x, n_y), neut_img)
+
         output = io.BytesIO()
-        # Convert back to RGB for typical saving, but preserving RGBA if PNG format is used
-        hero_img.save(output, format="PNG")
+        # Convert back to RGB for typically sharing, or preserve RGBA
+        canvas.save(output, format="PNG")
         output.seek(0)
         return output
     except Exception as e:
@@ -272,16 +331,20 @@ async def test_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     msg = (
-        f"**{result_emoji}{match_type_label}**\n\n"
+        f"**{result_emoji}** 🪄 (Тест)\n\n"
         f"👾 **Герой:** {hero_name}\n"
-        f"🩸 **KDA:** `{kills} / {deaths} / {assists}`\n"
-        f"💰 **GPM:** `{gpm}` | 🎓 **XPM:** `{xpm}`\n\n"
+        f"🩸 **KDA:** `12 / 2 / 8`\n"
+        f"💰 **GPM:** `750` | 🎓 **XPM:** `820`\n"
+        f"🪙 **Нетворс:** `24 500`\n\n"
         f"{mmr_change_text}\n\n"
         f"🔗 [Dotabuff](https://www.dotabuff.com/matches/{match_id})"
     )
     
+    # Mock items for test
+    mock_items = ["https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/blink.png", None, None, None, None, None]
+    
     try:
-        composite_io = await generate_composite_image(hero_img, rank_icon_id)
+        composite_io = await generate_composite_image(hero_img, rank_icon_id, mock_items, None)
         
         if composite_io:
             await context.bot.send_photo(chat_id=chat_id, photo=composite_io, caption=msg, parse_mode="Markdown")
@@ -324,6 +387,10 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                 assists = pm["numAssists"]
                 gpm = pm.get("gold_per_min", 0)
                 xpm = pm.get("xp_per_min", 0)
+                nw = pm.get("net_worth", 0)
+                
+                items_urls = pm.get("items_urls", [])
+                neutral_url = pm.get("neutral_url")
                 
                 result_emoji = "✨ ПОБЕДА ✨" if is_win else "💀 ПОРАЖЕНИЕ"
                 
@@ -333,7 +400,6 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                 lobby_type = pm.get("lobby_type")
                 game_mode = pm.get("game_mode")
                 
-                # Ranked = 7, Turbo = 23 (game_mode)
                 is_ranked = (lobby_type == 7)
                 is_turbo = (game_mode == 23)
                 is_custom = (lobby_type in [4, 15]) or (game_mode in [15, 19])
@@ -350,7 +416,6 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                 
                 mmr_change_text = ""
                 if manual_mmr is not None:
-                    # Only change MMR if it's Ranked AND NOT Turbo
                     if is_ranked and not is_turbo:
                         diff = 25 if is_win else -25
                         new_manual_mmr = manual_mmr + diff
@@ -379,17 +444,20 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                     mmr_change_text = f"📈 Оценка MMR: `{new_mmr}`\n⚠️ *Установи MMR: /set_mmr*"
                     db.update_match(chat_id, match_id, new_mmr)
                 
+                formatted_nw = f"{nw:,}".replace(",", " ")
+                
                 msg = (
                     f"**{result_emoji}{match_type_label}**\n\n"
                     f"👾 **Герой:** {hero_name}\n"
                     f"🩸 **KDA:** `{kills} / {deaths} / {assists}`\n"
-                    f"💰 **GPM:** `{gpm}` | 🎓 **XPM:** `{xpm}`\n\n"
+                    f"💰 **GPM:** `{gpm}` | 🎓 **XPM:** `{xpm}`\n"
+                    f"🪙 **Нетворс:** `{formatted_nw}`\n\n"
                     f"{mmr_change_text}\n\n"
                     f"🔗 [Dotabuff](https://www.dotabuff.com/matches/{match_id})"
                 )
                 
                 try:
-                    composite_io = await generate_composite_image(hero_img, rank_icon_id)
+                    composite_io = await generate_composite_image(hero_img, rank_icon_id, items_urls, neutral_url)
                     
                     if composite_io:
                         await context.bot.send_photo(chat_id=int(chat_id), photo=composite_io, caption=msg, parse_mode="Markdown")

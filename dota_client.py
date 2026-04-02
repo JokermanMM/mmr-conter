@@ -13,6 +13,29 @@ class DotaClient:
             "Accept": "application/json"
         }
         self.hero_cache = {}
+        self.item_id_map = {}
+
+    async def get_items_dict(self) -> dict:
+        """Fetch items mapping from OpenDota."""
+        if not self.item_id_map:
+            url = f"{self.BASE_URL}/constants/items"
+            async with httpx.AsyncClient() as client:
+                try:
+                    r = await client.get(url, headers=self.headers, timeout=15.0)
+                    if r.status_code == 200:
+                        data = r.json()
+                        # Map item ID -> Image URL
+                        for key, val in data.items():
+                            item_id = val.get("id")
+                            if item_id:
+                                img_path = val.get("img")
+                                if img_path:
+                                    # Ensure it's a full URL
+                                    full_url = f"https://cdn.cloudflare.steamstatic.com{img_path}"
+                                    self.item_id_map[item_id] = full_url
+                except Exception as e:
+                    logger.error(f"Error fetching items: {e}")
+        return self.item_id_map
 
     async def get_player(self, steam_id: int) -> dict | None:
         """Get player profile info."""
@@ -91,6 +114,15 @@ class DotaClient:
                 is_radiant = player_slot < 128
                 is_victory = (is_radiant and radiant_win) or (not is_radiant and not radiant_win)
                 
+                item_ids = [latest.get(f"item_{i}") for i in range(6)]
+                neutral_id = latest.get("item_neutral")
+                
+                # Pre-fetch items if needed
+                items_map = await self.get_items_dict()
+                
+                items_urls = [items_map.get(iid) for iid in item_ids]
+                neutral_url = items_map.get(neutral_id) if neutral_id else None
+                
                 return {
                     "player_name": player_name,
                     "mmr_estimate": mmr_estimate,
@@ -107,7 +139,10 @@ class DotaClient:
                         "xp_per_min": latest.get("xp_per_min", 0),
                         "gold_per_min": latest.get("gold_per_min", 0),
                         "lobby_type": latest.get("lobby_type"),
-                        "game_mode": latest.get("game_mode")
+                        "game_mode": latest.get("game_mode"),
+                        "net_worth": latest.get("net_worth", 0),
+                        "items_urls": items_urls,
+                        "neutral_url": neutral_url
                     }
                 }
             except Exception as e:
