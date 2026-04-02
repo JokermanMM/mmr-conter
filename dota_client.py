@@ -114,8 +114,28 @@ class DotaClient:
                 is_radiant = player_slot < 128
                 is_victory = (is_radiant and radiant_win) or (not is_radiant and not radiant_win)
                 
-                item_ids = [latest.get(f"item_{i}") for i in range(6)]
-                neutral_id = latest.get("item_neutral")
+                match_id = latest.get("match_id")
+                
+                # We need to fetch details for items and net worth
+                match_url = f"{self.BASE_URL}/matches/{match_id}"
+                match_details = {}
+                try:
+                    rm = await client.get(match_url, headers=self.headers, timeout=15.0)
+                    if rm.status_code == 200:
+                        match_details = rm.json()
+                except Exception as e:
+                    logger.error(f"Error fetching match details: {e}")
+                
+                # Find player in the detailed match data
+                full_player_data = {}
+                for p in match_details.get("players", []):
+                    if p.get("player_slot") == player_slot:
+                        full_player_data = p
+                        break
+                
+                item_ids = [full_player_data.get(f"item_{i}") for i in range(6)]
+                neutral_id = full_player_data.get("item_neutral")
+                net_worth = full_player_data.get("net_worth", 0)
                 
                 # Pre-fetch items if needed
                 items_map = await self.get_items_dict()
@@ -127,7 +147,7 @@ class DotaClient:
                     "player_name": player_name,
                     "mmr_estimate": mmr_estimate,
                     "match": {
-                        "id": latest.get("match_id"),
+                        "id": match_id,
                         "duration": latest.get("duration"),
                     },
                     "player_match": {
@@ -140,7 +160,7 @@ class DotaClient:
                         "gold_per_min": latest.get("gold_per_min", 0),
                         "lobby_type": latest.get("lobby_type"),
                         "game_mode": latest.get("game_mode"),
-                        "net_worth": latest.get("net_worth", 0),
+                        "net_worth": net_worth,
                         "items_urls": items_urls,
                         "neutral_url": neutral_url
                     }
