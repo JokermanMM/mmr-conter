@@ -335,7 +335,7 @@ async def test_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👾 **Герой:** {hero_name}\n"
         f"🩸 **KDA:** `12 / 2 / 8`\n"
         f"💰 **GPM:** `750` | 🎓 **XPM:** `820`\n"
-        f"🪙 **Нетворс:** `24 500`\n\n"
+        f"💰 **Networth:** `24 500`\n\n"
         f"{mmr_change_text}\n\n"
         f"🔗 [Dotabuff](https://www.dotabuff.com/matches/{match_id})"
     )
@@ -451,7 +451,7 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                     f"👾 **Герой:** {hero_name}\n"
                     f"🩸 **KDA:** `{kills} / {deaths} / {assists}`\n"
                     f"💰 **GPM:** `{gpm}` | 🎓 **XPM:** `{xpm}`\n"
-                    f"🪙 **Нетворс:** `{formatted_nw}`\n\n"
+                    f"💰 **Networth:** `{formatted_nw}`\n\n"
                     f"{mmr_change_text}\n\n"
                     f"🔗 [Dotabuff](https://www.dotabuff.com/matches/{match_id})"
                 )
