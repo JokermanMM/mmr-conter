@@ -348,13 +348,65 @@ async def test_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if composite_io:
             await context.bot.send_photo(chat_id=chat_id, photo=composite_io, caption=msg, parse_mode="Markdown")
-        elif hero_img:
-            await context.bot.send_photo(chat_id=chat_id, photo=hero_img, caption=msg, parse_mode="Markdown")
         else:
             await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown", disable_web_page_preview=True)
     except Exception as e:
         logger.error(f"Error sending test msg: {e}")
         await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown", disable_web_page_preview=True)
+
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Shows the tracking status and statistics of the bound account."""
+    chat_id = str(update.effective_chat.id)
+    user_info = db.get_user(chat_id)
+    
+    if not user_info or not user_info.get("steam_id"):
+        await update.message.reply_text("❌ Привязанный Steam ID не найден. Используйте /set_id")
+        return
+        
+    steam_id = int(user_info["steam_id"])
+    mmr = user_info.get("manual_mmr", "Не установлен")
+    rank_name, _ = get_rank_info(mmr) if isinstance(mmr, int) else ("Неизвестно", None)
+    
+    msg = await update.message.reply_text("⏳ Собираю статус аккаунта...")
+    
+    # Fetch player name and recent stats
+    player_data = await dota.get_player(steam_id)
+    player_name = player_data.get("profile", {}).get("personaname", "Unknown") if player_data else "Unknown"
+    
+    recent_stats = await dota.get_recent_stats(steam_id)
+    
+    status_text = (
+        f"📊 **Статус аккаунта**\n\n"
+        f"👤 **Игрок:** `{player_name}`\n"
+        f"🏆 **Ранг:** {rank_name}\n"
+        f"🎰 **MMR:** `{mmr}`\n"
+    )
+    
+    if recent_stats:
+        wins = recent_stats.get('wins', 0)
+        losses = recent_stats.get('losses', 0)
+        winrate = recent_stats.get('winrate_percent', 0.0)
+        
+        fav_hero_id = recent_stats.get('favorite_hero_id')
+        fav_hero_name = "Не найдено"
+        if fav_hero_id:
+            fav_hero_name = await dota.get_hero_name(fav_hero_id)
+        fav_hero_count = recent_stats.get('favorite_hero_count', 0)
+        
+        status_text += (
+            f"\n"
+            f"📈 **Винрейт (20 игр):** `{winrate}%` ({wins} W / {losses} L)\n"
+            f"🦸‍♂️ **Частый герой:** `{fav_hero_name}` ({fav_hero_count} раз)"
+        )
+    else:
+        status_text += "\n⚠️ _Не удалось загрузить последние матчи_"
+        
+    await context.bot.edit_message_text(
+        chat_id=chat_id,
+        message_id=msg.message_id,
+        text=status_text,
+        parse_mode="Markdown"
+    )
 
 async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
     """Background task to poll for new matches."""
@@ -484,6 +536,7 @@ async def main():
     application.add_handler(CommandHandler("set_id", set_id_command))
     application.add_handler(CommandHandler("set_mmr", set_mmr_command))
     application.add_handler(CommandHandler("test", test_msg_command))
+    application.add_handler(CommandHandler("status", status_command))
     
     # Job queue for polling (every 3 minutes)
     job_queue = application.job_queue
@@ -495,10 +548,11 @@ async def main():
         
         # Set up the menu button and command autocomplete
         await application.bot.set_my_commands([
-            BotCommand("start", "Инструкция и главное меню"),
-            BotCommand("set_id", "Привязать профиль (нужно написать /set_id <ID>)"),
-            BotCommand("set_mmr", "Обновить точный MMR (нужно написать /set_mmr <ММР>)"),
-            BotCommand("test", "Тест: отправить пример уведомления о матче")
+            BotCommand("start", "Запустить бота"),
+            BotCommand("set_id", "Привязать ID (пример: /set_id <ID>)"),
+            BotCommand("set_mmr", "Установить MMR (пример: /set_mmr <ММР>)"),
+            BotCommand("status", "Показать статус аккаунта"),
+            BotCommand("test", "Проверка сообщения"),
         ])
         
         # Wait a few seconds to let the old Render instance shut down completely to avoid Conflict errors

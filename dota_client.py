@@ -154,6 +154,61 @@ class DotaClient:
                     "player_match": None
                 }
 
+    async def get_recent_stats(self, steam_id: int) -> dict | None:
+        """Get winrate and favorite hero for the last 20 matches."""
+        url = f"{self.BASE_URL}/players/{steam_id}/recentMatches"
+        async with httpx.AsyncClient() as client:
+            try:
+                r = await client.get(url, headers=self.headers, timeout=15.0)
+                if r.status_code != 200:
+                    return None
+                
+                matches = r.json()
+                if not matches:
+                    return None
+                    
+                wins = 0
+                losses = 0
+                hero_counts = {}
+                
+                for m in matches: # Up to 20 by default
+                    # Win/loss calc
+                    player_slot = m.get("player_slot", 0)
+                    radiant_win = m.get("radiant_win", False)
+                    is_radiant = player_slot < 128
+                    is_victory = (is_radiant and radiant_win) or (not is_radiant and not radiant_win)
+                    
+                    if is_victory:
+                        wins += 1
+                    else:
+                        losses += 1
+                        
+                    # Hero calc
+                    hid = m.get("hero_id")
+                    if hid:
+                        hero_counts[hid] = hero_counts.get(hid, 0) + 1
+                        
+                most_played_hero_id = None
+                most_played_count = 0
+                if hero_counts:
+                    # Find highest count
+                    most_played_hero_id = max(hero_counts, key=hero_counts.get)
+                    most_played_count = hero_counts[most_played_hero_id]
+                    
+                total = wins + losses
+                winrate = (wins / total * 100) if total > 0 else 0.0
+                
+                return {
+                    "wins": wins,
+                    "losses": losses,
+                    "winrate_percent": round(winrate, 1),
+                    "favorite_hero_id": most_played_hero_id,
+                    "favorite_hero_count": most_played_count
+                }
+            except Exception as e:
+                logger.error(f"Error fetching recent stats: {e}")
+                return None
+
     async def get_hero_data(self, hero_id: int) -> dict:
         """Get hero detailed data by ID."""
         if not self.hero_cache:
