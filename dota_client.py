@@ -40,7 +40,11 @@ class DotaClient:
                 if r.status_code != 200:
                     logger.error(f"Stratz request failed: {r.status_code} - {r.text}")
                     return None
-                return r.json()
+                
+                resp_json = r.json()
+                if "errors" in resp_json:
+                    logger.error(f"Stratz GraphQL errors: {resp_json['errors']}")
+                return resp_json
             except Exception as e:
                 logger.error(f"Error querying Stratz: {e}")
                 return None
@@ -126,7 +130,8 @@ class DotaClient:
               gameMode
               lobbyType
               durationSeconds
-              players(steamAccountId: $steamId) {
+              players {
+                steamAccountId
                 isVictory
                 heroId
                 numKills
@@ -149,9 +154,6 @@ class DotaClient:
         """
         data = await self._query_stratz(query, {"steamId": steam_id})
         if not data or not data.get("data") or not data["data"].get("player"):
-            logger.warning(f"Stratz match request failed for {steam_id}, falling back to OpenDota...")
-            # Here we could implement the Opendota fallback if needed, 
-            # but for now we trust Stratz or return None to retry later.
             return None
         
         player = data["data"]["player"]
@@ -161,7 +163,17 @@ class DotaClient:
             
         latest = matches[0]
         match_id = latest["id"]
-        player_stats = latest["players"][0]
+        
+        # Find our player in the match
+        player_stats = None
+        for p in latest.get("players", []):
+            if p.get("steamAccountId") == steam_id:
+                player_stats = p
+                break
+        
+        if not player_stats:
+            logger.warning(f"Player {steam_id} not found in Stratz match {match_id}")
+            return None
         
         # Prepare item URLs (still using OpenDota for constants mapping)
         items_map = await self.get_items_dict()
@@ -177,7 +189,7 @@ class DotaClient:
             },
             "player_match": {
                 "isVictory": player_stats["isVictory"],
-                "hero_id": player_stats["hero_id"] if "hero_id" in player_stats else player_stats.get("heroId"),
+                "hero_id": player_stats.get("heroId"),
                 "numKills": player_stats["numKills"],
                 "numDeaths": player_stats["numDeaths"],
                 "numAssists": player_stats["numAssists"],
@@ -197,7 +209,8 @@ class DotaClient:
         query($steamId: Long!) {
           player(steamAccountId: $steamId) {
             matches(take: 20) {
-              players(steamAccountId: $steamId) {
+              players {
+                steamAccountId
                 isVictory
                 heroId
               }
@@ -218,7 +231,16 @@ class DotaClient:
         hero_counts = {}
         
         for m in matches:
-            p = m["players"][0]
+            # Find our player
+            p = None
+            for mp in m.get("players", []):
+                if mp.get("steamAccountId") == steam_id:
+                    p = mp
+                    break
+            
+            if not p:
+                continue
+                
             if p["isVictory"]:
                 wins += 1
             else:
