@@ -306,6 +306,9 @@ class DotaClient:
                 steamAccountId
                 isVictory
                 heroId
+                numKills
+                numDeaths
+                numAssists
               }
             }
           }
@@ -338,10 +341,11 @@ class DotaClient:
                 return None
     
     def _calc_recent_stats(self, matches: list, steam_id: int, source: str) -> dict | None:
-        """Calculate win/loss and favorite hero from match list."""
+        """Calculate win/loss, top-3 heroes, and best KDA from match list."""
         wins = 0
         losses = 0
-        hero_counts = {}
+        hero_stats = {}  # {hero_id: {"count": N, "wins": N}}
+        best_kda = {"hero_id": None, "kills": 0, "deaths": 0, "assists": 0, "kda_value": 0}
         
         for m in matches:
             if source == "stratz":
@@ -354,12 +358,18 @@ class DotaClient:
                     continue
                 is_victory = p["isVictory"]
                 hid = p["heroId"]
+                kills = p.get("numKills", 0)
+                deaths = p.get("numDeaths", 0)
+                assists = p.get("numAssists", 0)
             else:  # opendota
                 player_slot = m.get("player_slot", 0)
                 radiant_win = m.get("radiant_win", False)
                 is_radiant = player_slot < 128
                 is_victory = (is_radiant and radiant_win) or (not is_radiant and not radiant_win)
                 hid = m.get("hero_id")
+                kills = m.get("kills", 0)
+                deaths = m.get("deaths", 0)
+                assists = m.get("assists", 0)
             
             if is_victory:
                 wins += 1
@@ -367,13 +377,34 @@ class DotaClient:
                 losses += 1
             
             if hid:
-                hero_counts[hid] = hero_counts.get(hid, 0) + 1
+                if hid not in hero_stats:
+                    hero_stats[hid] = {"count": 0, "wins": 0}
+                hero_stats[hid]["count"] += 1
+                if is_victory:
+                    hero_stats[hid]["wins"] += 1
+            
+            # Track best KDA
+            kda_value = (kills + assists) / max(1, deaths)
+            if kda_value > best_kda["kda_value"]:
+                best_kda = {
+                    "hero_id": hid,
+                    "kills": kills,
+                    "deaths": deaths,
+                    "assists": assists,
+                    "kda_value": round(kda_value, 1)
+                }
         
-        most_played_hero_id = None
-        most_played_count = 0
-        if hero_counts:
-            most_played_hero_id = max(hero_counts, key=hero_counts.get)
-            most_played_count = hero_counts[most_played_hero_id]
+        # Build top-3 heroes sorted by count
+        top_heroes = []
+        sorted_heroes = sorted(hero_stats.items(), key=lambda x: x[1]["count"], reverse=True)[:3]
+        for hid, stats in sorted_heroes:
+            wr = round(stats["wins"] / stats["count"] * 100) if stats["count"] > 0 else 0
+            top_heroes.append({
+                "hero_id": hid,
+                "count": stats["count"],
+                "wins": stats["wins"],
+                "winrate": wr
+            })
             
         total = wins + losses
         winrate = (wins / total * 100) if total > 0 else 0.0
@@ -382,8 +413,8 @@ class DotaClient:
             "wins": wins,
             "losses": losses,
             "winrate_percent": round(winrate, 1),
-            "favorite_hero_id": most_played_hero_id,
-            "favorite_hero_count": most_played_count
+            "top_heroes": top_heroes,
+            "best_kda": best_kda if best_kda["hero_id"] else None
         }
 
     async def get_hero_data(self, hero_id: int) -> dict:
