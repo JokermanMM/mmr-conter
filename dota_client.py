@@ -118,7 +118,18 @@ class DotaClient:
                 return False
 
     async def get_latest_match(self, steam_id: int) -> dict | None:
-        """Get latest match with player stats using Stratz."""
+        """Get latest match. Tries Stratz first, falls back to OpenDota."""
+        # Try Stratz first
+        result = await self._get_latest_match_stratz(steam_id)
+        if result:
+            return result
+        
+        # Fallback to OpenDota
+        logger.info(f"Stratz failed for {steam_id}, trying OpenDota...")
+        return await self._get_latest_match_opendota(steam_id)
+    
+    async def _get_latest_match_stratz(self, steam_id: int) -> dict | None:
+        """Get latest match via Stratz GraphQL."""
         query = """
         query($steamId: Long!) {
           player(steamAccountId: $steamId) {
@@ -164,7 +175,6 @@ class DotaClient:
         latest = matches[0]
         match_id = latest["id"]
         
-        # Find our player in the match
         player_stats = None
         for p in latest.get("players", []):
             if p.get("steamAccountId") == steam_id:
@@ -172,10 +182,8 @@ class DotaClient:
                 break
         
         if not player_stats:
-            logger.warning(f"Player {steam_id} not found in Stratz match {match_id}")
             return None
         
-        # Prepare item URLs (still using OpenDota for constants mapping)
         items_map = await self.get_items_dict()
         item_ids = [player_stats.get(f"item{i}Id") for i in range(6)]
         items_urls = [items_map.get(iid) for iid in item_ids]
@@ -203,8 +211,93 @@ class DotaClient:
             }
         }
 
+    async def _get_latest_match_opendota(self, steam_id: int) -> dict | None:
+        """Get latest match via OpenDota REST API (fallback)."""
+        # Get player profile
+        player_name = "Unknown"
+        url = f"{self.OPENDOTA_URL}/players/{steam_id}"
+        async with httpx.AsyncClient() as client:
+            try:
+                r = await client.get(url, headers=self.headers, timeout=15.0)
+                if r.status_code == 200:
+                    pdata = r.json()
+                    player_name = pdata.get("profile", {}).get("personaname", "Unknown")
+            except Exception as e:
+                logger.error(f"OpenDota player fetch error: {e}")
+            
+            # Get recent matches
+            try:
+                r = await client.get(f"{self.OPENDOTA_URL}/players/{steam_id}/recentMatches", 
+                                    headers=self.headers, timeout=15.0)
+                if r.status_code != 200 or not r.json():
+                    return None
+                    
+                matches = r.json()
+                latest = matches[0]
+                
+                player_slot = latest.get("player_slot", 0)
+                radiant_win = latest.get("radiant_win", False)
+                is_radiant = player_slot < 128
+                is_victory = (is_radiant and radiant_win) or (not is_radiant and not radiant_win)
+                match_id = latest.get("match_id")
+                
+                # Fetch full match details for items and net_worth
+                items_urls = [None] * 6
+                neutral_url = None
+                net_worth = 0
+                try:
+                    rm = await client.get(f"{self.OPENDOTA_URL}/matches/{match_id}",
+                                         headers=self.headers, timeout=15.0)
+                    if rm.status_code == 200:
+                        match_details = rm.json()
+                        for p in match_details.get("players", []):
+                            if p.get("player_slot") == player_slot:
+                                item_ids = [p.get(f"item_{i}") for i in range(6)]
+                                neutral_id = p.get("item_neutral")
+                                net_worth = p.get("net_worth", 0)
+                                items_map = await self.get_items_dict()
+                                items_urls = [items_map.get(iid) for iid in item_ids]
+                                neutral_url = items_map.get(neutral_id) if neutral_id else None
+                                break
+                except Exception as e:
+                    logger.error(f"OpenDota match details error: {e}")
+                
+                return {
+                    "player_name": player_name,
+                    "match": {
+                        "id": str(match_id),
+                        "duration": latest.get("duration")
+                    },
+                    "player_match": {
+                        "isVictory": is_victory,
+                        "hero_id": latest.get("hero_id"),
+                        "numKills": latest.get("kills", 0),
+                        "numDeaths": latest.get("deaths", 0),
+                        "numAssists": latest.get("assists", 0),
+                        "xp_per_min": latest.get("xp_per_min", 0),
+                        "gold_per_min": latest.get("gold_per_min", 0),
+                        "net_worth": net_worth,
+                        "lobby_type": latest.get("lobby_type"),
+                        "game_mode": latest.get("game_mode"),
+                        "items_urls": items_urls,
+                        "neutral_url": neutral_url
+                    }
+                }
+            except Exception as e:
+                logger.error(f"OpenDota matches error: {e}")
+                return None
+
     async def get_recent_stats(self, steam_id: int) -> dict | None:
-        """Get winrate and favorite hero for the last 20 matches using Stratz."""
+        """Get winrate and favorite hero. Tries Stratz first, falls back to OpenDota."""
+        result = await self._get_recent_stats_stratz(steam_id)
+        if result:
+            return result
+        
+        logger.info(f"Stratz recent stats failed for {steam_id}, trying OpenDota...")
+        return await self._get_recent_stats_opendota(steam_id)
+
+    async def _get_recent_stats_stratz(self, steam_id: int) -> dict | None:
+        """Get recent stats via Stratz."""
         query = """
         query($steamId: Long!) {
           player(steamAccountId: $steamId) {
@@ -226,27 +319,53 @@ class DotaClient:
         if not matches:
             return None
             
+        return self._calc_recent_stats(matches, steam_id, source="stratz")
+    
+    async def _get_recent_stats_opendota(self, steam_id: int) -> dict | None:
+        """Get recent stats via OpenDota (fallback)."""
+        url = f"{self.OPENDOTA_URL}/players/{steam_id}/recentMatches"
+        async with httpx.AsyncClient() as client:
+            try:
+                r = await client.get(url, headers=self.headers, timeout=15.0)
+                if r.status_code != 200:
+                    return None
+                matches = r.json()
+                if not matches:
+                    return None
+                return self._calc_recent_stats(matches, steam_id, source="opendota")
+            except Exception as e:
+                logger.error(f"OpenDota recent stats error: {e}")
+                return None
+    
+    def _calc_recent_stats(self, matches: list, steam_id: int, source: str) -> dict | None:
+        """Calculate win/loss and favorite hero from match list."""
         wins = 0
         losses = 0
         hero_counts = {}
         
         for m in matches:
-            # Find our player
-            p = None
-            for mp in m.get("players", []):
-                if mp.get("steamAccountId") == steam_id:
-                    p = mp
-                    break
+            if source == "stratz":
+                p = None
+                for mp in m.get("players", []):
+                    if mp.get("steamAccountId") == steam_id:
+                        p = mp
+                        break
+                if not p:
+                    continue
+                is_victory = p["isVictory"]
+                hid = p["heroId"]
+            else:  # opendota
+                player_slot = m.get("player_slot", 0)
+                radiant_win = m.get("radiant_win", False)
+                is_radiant = player_slot < 128
+                is_victory = (is_radiant and radiant_win) or (not is_radiant and not radiant_win)
+                hid = m.get("hero_id")
             
-            if not p:
-                continue
-                
-            if p["isVictory"]:
+            if is_victory:
                 wins += 1
             else:
                 losses += 1
             
-            hid = p["heroId"]
             if hid:
                 hero_counts[hid] = hero_counts.get(hid, 0) + 1
         
