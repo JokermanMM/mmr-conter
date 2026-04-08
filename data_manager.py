@@ -33,6 +33,7 @@ class DataManager:
             )
         '''
         cursor.execute(query)
+        conn.commit()
         
         # Migrations for users table
         migrations = [
@@ -43,8 +44,9 @@ class DataManager:
         for m in migrations:
             try:
                 cursor.execute(m)
+                conn.commit()
             except Exception:
-                pass
+                conn.rollback()
         
         # MMR history table for /graph
         cursor.execute('''
