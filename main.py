@@ -242,35 +242,45 @@ async def set_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.effective_chat.id
         await update.message.reply_text(f"⏳ Проверяю профиль `{steam_id}`...", parse_mode="Markdown")
         
-        data = await dota.get_latest_match(steam_id)
-        if not data:
-            await update.message.reply_text(
-                "❌ **Игрок не найден.**\n\n"
-                "**Что делать:**\n"
-                "1. Убедись, что ID верный.\n"
-                "2. Включи «Общедоступную историю матчей» в настройках Доты.\n"
-                "3. Зайди на [opendota.com/players/" + str(steam_id) + "](https://www.opendota.com/players/" + str(steam_id) + ") чтобы обновить профиль.\n"
-                "4. Подожди 2-3 минуты и попробуй снова.",
-                parse_mode="Markdown",
-                disable_web_page_preview=True
-            )
-            return
+        # Try to validate via API, but save even if API is down
+        player_name = None
+        last_match_id = None
+        last_mmr = None
         
-        last_match_id = data["match"]["id"] if data["match"] else None
-        last_mmr = data.get("mmr_estimate")
+        try:
+            player_data = await dota.get_player(steam_id)
+            if player_data:
+                player_name = player_data.get("profile", {}).get("personaname", "Unknown")
+            
+            data = await dota.get_latest_match(steam_id)
+            if data:
+                last_match_id = data["match"]["id"] if data.get("match") else None
+                last_mmr = data.get("mmr_estimate")
+                if not player_name:
+                    player_name = data.get("player_name", "Unknown")
+        except Exception as e:
+            logger.warning(f"API check failed during set_id: {e}")
         
+        # Save the ID regardless of API response
         db.set_user(chat_id, steam_id, last_match_id, last_mmr)
         
-        rank_name, rank_icon_id = get_rank_info(last_mmr)
-        
-        msg = (
-            f"✅ **Привязано к {data['player_name']}!**\n"
-            f"Отслеживание матчей запущено.\n\n"
-            f"🏆 Твой ранг: **{rank_name}**\n"
-            f"📈 Оценка MMR: `{last_mmr if last_mmr else 'Неизвестно'}`\n\n"
-            f"⚠️ **Важно:** Чтобы я считал текущий ММР точно (±25), "
-            f"введи свой реальный MMR командой:\n`/set_mmr <число>`"
-        )
+        if player_name:
+            rank_name, rank_icon_id = get_rank_info(last_mmr)
+            msg = (
+                f"✅ **Привязано к {player_name}!**\n"
+                f"Отслеживание матчей запущено.\n\n"
+                f"🏆 Твой ранг: **{rank_name}**\n"
+                f"📈 Оценка MMR: `{last_mmr if last_mmr else 'Неизвестно'}`\n\n"
+                f"⚠️ **Важно:** Чтобы я считал текущий ММР точно (±25), "
+                f"введи свой реальный MMR командой:\n`/set_mmr <число>`"
+            )
+        else:
+            msg = (
+                f"✅ **ID `{steam_id}` сохранён!**\n"
+                f"⚠️ Не удалось проверить профиль (API временно недоступен), "
+                f"но отслеживание запущено.\n\n"
+                f"Введи свой реальный MMR командой:\n`/set_mmr <число>`"
+            )
         await update.message.reply_text(msg, parse_mode="Markdown")
     except ValueError:
         await update.message.reply_text("❌ ID должен быть числом. Пример: `/set_id 12345678`", parse_mode="Markdown")
