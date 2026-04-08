@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from aiohttp import web
 import aiohttp
 import io
-from PIL import Image, ImageDraw, ImageFont
+# PIL imports moved locally inside graph function to prevent startup crash if missing
 
 # Load .env for local development
 load_dotenv()
@@ -514,17 +514,40 @@ async def graph_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def generate_mmr_graph(history):
     """Create an MMR graph image using Pillow."""
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        logger.error("Pillow not installed. Cannot generate graph.")
+        return None
+
     W, H = 800, 400
     PAD_L, PAD_R, PAD_T, PAD_B = 70, 30, 40, 50
     
     img = Image.new('RGB', (W, H), color=(24, 26, 33))
     draw = ImageDraw.Draw(img)
     
-    try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
-        font_sm = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
-        font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
-    except:
+    # Try different font paths common for Linux/Windows
+    font = None
+    font_sm = None
+    font_title = None
+    
+    font_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "arial.ttf",
+        "DejaVuSans.ttf"
+    ]
+    
+    for path in font_paths:
+        try:
+            font = ImageFont.truetype(path, 14)
+            font_sm = ImageFont.truetype(path, 11)
+            font_title = ImageFont.truetype(path, 16)
+            break
+        except:
+            continue
+            
+    if not font:
         font = ImageFont.load_default()
         font_sm = font
         font_title = font
