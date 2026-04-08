@@ -10,7 +10,13 @@ from dotenv import load_dotenv
 from aiohttp import web
 import aiohttp
 import io
-# PIL imports moved locally inside graph function to prevent startup crash if missing
+
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    HAS_PILLOW = True
+except ImportError:
+    HAS_PILLOW = False
+    logger.warning("Pillow not installed. Hero images and graphs will be disabled.")
 
 # Load .env for local development
 load_dotenv()
@@ -73,6 +79,9 @@ def get_rank_info(mmr):
 
 async def generate_composite_image(hero_img_url, rank_icon_id, items_urls=None, neutral_url=None):
     """Downloads hero image and overlays the rank icon, plus appends items bar underneath."""
+    if not HAS_PILLOW:
+        return None
+
     if not hero_img_url:
         return None
         
@@ -514,10 +523,7 @@ async def graph_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def generate_mmr_graph(history):
     """Create an MMR graph image using Pillow."""
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-    except ImportError:
-        logger.error("Pillow not installed. Cannot generate graph.")
+    if not HAS_PILLOW:
         return None
 
     W, H = 800, 400
