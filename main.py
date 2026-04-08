@@ -459,12 +459,18 @@ def check_achievements(pm, new_mmr, old_mmr, streak):
     is_win = pm.get("isVictory", False)
     
     # Kill milestones
-    if kills >= 20:
+    if kills >= 30:
+        achievements.append("😈 *Богоподобный! — 30+ убийств*")
+    elif kills >= 20:
         achievements.append("☠️ *Бойня! — 20+ убийств*")
     elif kills >= 15:
         achievements.append("⚔️ *Доминация! — 15+ убийств*")
     elif kills >= 10:
         achievements.append("🎖️ *Убийца! — 10+ убийств*")
+    
+    # Assist milestones
+    if assists >= 25:
+        achievements.append("🤝 *Лучший напарник! — 25+ ассистов*")
     
     # Perfect game  
     if deaths == 0 and kills >= 5:
@@ -477,9 +483,9 @@ def check_achievements(pm, new_mmr, old_mmr, streak):
     
     # Win streak
     if streak == 5:
-        achievements.append("🔥 *На огне! — 5 побед подряд*")
+        achievements.append("🔥 *В огне! — 5 побед подряд*")
     elif streak == 10:
-        achievements.append("🌋 *Неудержим! — 10 побед подряд*")
+        achievements.append("🌋 *Неудержимый! — 10 побед подряд*")
     
     # MMR milestones (crossed a hundred boundary)
     if new_mmr and old_mmr and is_win:
