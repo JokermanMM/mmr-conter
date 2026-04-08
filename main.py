@@ -432,7 +432,7 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                 continue
             
             match_id = data["match"]["id"]
-            if match_id != user_info.get("last_match_id"):
+            if str(match_id) != str(user_info.get("last_match_id")):
                 # New match found!
                 pm = data["player_match"]
                 hero_id = pm.get("hero_id", 0)
