@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Config from environment variables
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
+STRATZ_TOKEN = os.environ.get("STRATZ_TOKEN")
 PORT = int(os.environ.get("PORT", 8080))
 
 if not BOT_TOKEN:
@@ -30,7 +31,7 @@ if not BOT_TOKEN:
     exit(1)
 
 db = DataManager()
-dota = DotaClient()
+dota = DotaClient(stratz_token=STRATZ_TOKEN)
 
 def get_rank_info(mmr):
     """Calculate Dota 2 rank tier and local image ID from MMR."""
@@ -415,13 +416,9 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
         try:
             steam_id = user_info["steam_id"]
             
-            # Force OpenDota to fetch data from Steam API to avoid long delays
-            await dota.refresh_player(steam_id)
-            # Give OpenDota a second to process the parse
-            await asyncio.sleep(2)
-            
+            # Use Stratz to get latest match (much faster than OpenDota)
             data = await dota.get_latest_match(steam_id)
-            if not data or not data["match"] or not data["player_match"]:
+            if not data or not data.get("match") or not data.get("player_match"):
                 continue
             
             match_id = data["match"]["id"]
