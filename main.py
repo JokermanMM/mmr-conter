@@ -291,7 +291,7 @@ async def get_hero_info(hero_id: int) -> dict:
     system_name = hero_data.get("name", "").replace("npc_dota_hero_", "")
     img_url = f"https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/{system_name}.png" if system_name else None
     
-    info = {"name": name, "img_url": img_url}
+    info = {"name": name, "img_url": img_url, "short": system_name}
     hero_display_cache[hero_id] = info
     return info
 
