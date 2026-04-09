@@ -80,7 +80,7 @@ def get_main_keyboard():
         ],
         [
             InlineKeyboardButton("📊 График MMR", callback_data="graph"),
-            InlineKeyboardButton("🎯 MMR", callback_data="set_mmr")
+            InlineKeyboardButton("🎯 MMR", switch_inline_query_current_chat="/set_mmr ")
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -98,8 +98,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status_command(update, context)
     elif cmd == "graph":
         await graph_command(update, context)
-    elif cmd == "set_mmr":
-        await update.effective_message.reply_text("Чтобы изменить MMR, введите команду: `/set_mmr <цифры>`", parse_mode="Markdown")
 
 
 def get_rank_info(mmr):
@@ -602,10 +600,10 @@ async def lastgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_info = db.get_user(chat_id)
     if not user_info or not user_info.get("steam_id"):
-        await update.message.reply_text("❌ Привязанный Steam ID не найден. Используйте /set_id")
+        await update.effective_message.reply_text("❌ Привязанный Steam ID не найден. Используйте /set_id")
         return
         
-    msg_wait = await update.message.reply_text("⏳ Загружаю последнюю игру...")
+    msg_wait = await update.effective_message.reply_text("⏳ Загружаю последнюю игру...")
     
     try:
         steam_id = user_info["steam_id"]
@@ -707,7 +705,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_info = db.get_user(chat_id)
     
     if not user_info or not user_info.get("steam_id"):
-        await update.message.reply_text("❌ Привязанный Steam ID не найден. Используйте /set_id")
+        await update.effective_message.reply_text("❌ Привязанный Steam ID не найден. Используйте /set_id")
         return
         
     steam_id = int(user_info["steam_id"])
@@ -715,7 +713,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rank_name, _ = get_rank_info(mmr) if isinstance(mmr, int) else ("Неизвестно", None)
     streak = user_info.get("win_streak", 0)
     
-    msg = await update.message.reply_text("⏳ Собираю статус аккаунта...")
+    msg = await update.effective_message.reply_text("⏳ Собираю статус аккаунта...")
     
     player_data = await dota.get_player(steam_id)
     player_name = player_data.get("profile", {}).get("personaname", "Unknown") if player_data else "Unknown"
@@ -824,13 +822,13 @@ async def graph_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_info = db.get_user(chat_id)
     
     if not user_info:
-        await update.message.reply_text("❌ Сначала привяжи аккаунт: /set_id")
+        await update.effective_message.reply_text("❌ Сначала привяжи аккаунт: /set_id")
         return
     
     # User requested specifically 10 latest games (rolling window)
     history = db.get_mmr_history(chat_id, limit=10)
     if len(history) < 2:
-        await update.message.reply_text("📈 Недостаточно данных. Сыграй ещё несколько рейтинговых матчей!")
+        await update.effective_message.reply_text("📈 Недостаточно данных. Сыграй ещё несколько рейтинговых матчей!")
         return
     
     # Generate graph image
