@@ -525,6 +525,116 @@ async def test_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error sending test msg: {e}")
         await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown", disable_web_page_preview=True)
 
+async def lastgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Sends the actual latest match result without registering it in DB. Admin only."""
+    chat_id = str(update.effective_chat.id)
+    
+    # Admin check
+    if ADMIN_CHAT_ID and str(chat_id) != str(ADMIN_CHAT_ID):
+        await update.message.reply_text("🔒 Эта команда доступна только администратору бота.")
+        return
+        
+    user_info = db.get_user(chat_id)
+    if not user_info or not user_info.get("steam_id"):
+        await update.message.reply_text("❌ Привязанный Steam ID не найден. Используйте /set_id")
+        return
+        
+    msg_wait = await update.message.reply_text("⏳ Загружаю последнюю игру...")
+    
+    try:
+        steam_id = user_info["steam_id"]
+        data = await dota.get_latest_match(steam_id)
+        if not data or not data.get("match") or not data.get("player_match"):
+            await msg_wait.edit_text("❌ МНе удалось найти последние матчи.")
+            return
+            
+        match_id = data["match"]["id"]
+        pm = data["player_match"]
+        hero_id = pm.get("hero_id", 0)
+        hero_info = await get_hero_info(hero_id)
+        hero_name = hero_info["name"]
+        
+        is_win = pm["isVictory"]
+        kills = pm["numKills"]
+        deaths = pm["numDeaths"]
+        assists = pm["numAssists"]
+        gpm = pm.get("gold_per_min", 0)
+        xpm = pm.get("xp_per_min", 0)
+        nw = pm.get("net_worth", 0)
+        duration = data["match"].get("duration", 0)
+        
+        items_urls = pm.get("items_urls", [])
+        neutral_url = pm.get("neutral_url")
+        
+        hero_short_name = pm.get("hero_short_name")
+        item_purchases = pm.get("item_purchases", [])
+        abilities_data = pm.get("abilities", [])
+        ability_cache = await dota.get_abilities_dict()
+        
+        lobby_type = pm.get("lobby_type")
+        game_mode = pm.get("game_mode")
+        is_turbo = (game_mode == 23)
+        match_type_label = " ⚡️ (Турбо)" if is_turbo else ""
+        
+        result_emoji = "✨ ПОБЕДА ✨" if is_win else "💀 ПОРАЖЕНИЕ"
+        manual_mmr = user_info.get("manual_mmr", 0)
+        rank_name, rank_icon_id = get_rank_info(manual_mmr)
+        
+        new_mmr = manual_mmr + (25 if is_win else -25)
+        mmr_diff = 25 if is_win else -25
+        
+        nw_timeline = pm.get("networth_timeline", [])
+        nw_10 = nw_timeline[10] if len(nw_timeline) > 10 else None
+        
+        formatted_nw = f"{nw:,}".replace(",", " ")
+        duration_text = format_duration(duration)
+        
+        match_stats = {
+            "result_text": f"{result_emoji}{match_type_label}",
+            "hero_name": hero_name,
+            "kills": kills, "deaths": deaths, "assists": assists,
+            "gpm": gpm, "xpm": xpm, "net_worth": nw,
+            "duration": duration_text,
+            "rank_name": rank_name,
+            "new_mmr": new_mmr,
+            "mmr_diff": mmr_diff,
+            "nw_10": nw_10,
+            "item_ids": pm.get("item_ids", [None]*6)
+        }
+        
+        msg = (
+            f"**{result_emoji}{match_type_label}**\n\n"
+            f"👾 **Герой:** {hero_name}\n"
+            f"🩸 **KDA:** `{kills} / {deaths} / {assists}`\n"
+            f"💰 **GPM:** `{gpm}` | 🎓 **XPM:** `{xpm}`\n"
+            f"💵 **Networth:** `{formatted_nw}`\n"
+            f"⏱️ **Длительность:** `{duration_text}`\n\n"
+            f"🎰 **ММР:** `{new_mmr}` (**{'+' if mmr_diff>0 else ''}{mmr_diff}**)\n"
+            f"🏆 **Ранг:** {rank_name}\n"
+            f"\n🔗 [Dotabuff](https://www.dotabuff.com/matches/{match_id})"
+        )
+        
+        composite_io = await generate_composite_image(
+            hero_short_name=hero_short_name, 
+            rank_icon_id=rank_icon_id, 
+            items_urls=items_urls, 
+            neutral_url=neutral_url,
+            item_purchases=item_purchases,
+            abilities=abilities_data,
+            ability_cache=ability_cache,
+            stats=match_stats
+        )
+        
+        await msg_wait.delete()
+        if composite_io:
+            await context.bot.send_photo(chat_id=int(chat_id), photo=composite_io, caption=msg, parse_mode="Markdown")
+        else:
+            await context.bot.send_message(chat_id=int(chat_id), text=msg, parse_mode="Markdown", disable_web_page_preview=True)
+            
+    except Exception as e:
+        logger.error(f"Error in lastgame command: {e}")
+        await msg_wait.edit_text(f"❌ Произошла ошибка при загрузке: {str(e)}")
+
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Shows the tracking status and statistics of the bound account."""
     chat_id = str(update.effective_chat.id)
@@ -1082,6 +1192,7 @@ async def main():
     application.add_handler(CommandHandler("set_id", set_id_command))
     application.add_handler(CommandHandler("set_mmr", set_mmr_command))
     application.add_handler(CommandHandler("test", test_msg_command))
+    application.add_handler(CommandHandler("lastgame", lastgame_command))
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("graph", graph_command))
     
