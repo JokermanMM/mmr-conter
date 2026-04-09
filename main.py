@@ -192,7 +192,7 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
             r_w = 60
             r_h = int(rank_img.height * (r_w / rank_img.width))
             rank_img = rank_img.resize((r_w, r_h), Image.Resampling.LANCZOS)
-            canvas.paste(rank_img, (315 + res_w + 15, 12), rank_img)
+            canvas.paste(rank_img, (315 + res_w + 25, 22), rank_img)
         
         draw.text((315, 50), stats.get("hero_name", "Герой"), fill=(200, 200, 210), font=font_reg)
         
