@@ -113,7 +113,7 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
             # 1. Background/Hero Banner
             hero_banner = None
             if hero_short_name:
-                banner_url = f"https://cdn.stratz.com/images/dota2/heroes/{hero_short_name}_vert.png"
+                banner_url = f"https://cdn.stratz.com/images/dota2/heroes/vert/{hero_short_name}.png"
                 async with session.get(banner_url) as resp:
                     if resp.status == 200:
                         hero_banner = Image.open(io.BytesIO(await resp.read())).convert("RGBA")
@@ -225,6 +225,11 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
                 t_str = format_duration(t)
                 # Center time under icon
                 draw.text((item_x + i*75 + 10, item_y + icon_h + 5), t_str, fill=(180, 180, 190), font=font_tiny)
+
+        # Draw Networth at 10m
+        nw_10 = stats.get("nw_10")
+        if nw_10:
+            draw.text((320, item_y + icon_h + 30), f"NETWORTH НА 10:00: {nw_10:,}".replace(",", " "), fill=(255, 215, 0), font=font_sm)
 
         # Draw Neutral Item
         if neutral_img:
@@ -517,7 +522,7 @@ async def test_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             rank_icon_id=rank_icon_id, 
             items_urls=mock_items, 
             neutral_url=mock_neutral,
-            stats={**stats, "item_ids": [1, 2, 3, 4, 5, 6]},
+            stats={**stats, "item_ids": [1, 2, 3, 4, 5, 6], "nw_10": 4200},
             item_purchases=item_purchases,
             abilities=mock_abilities,
             ability_cache=abilities_dict
@@ -903,6 +908,10 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                 
                 msg += f"\n\n🔗 [Dotabuff](https://www.dotabuff.com/matches/{match_id})"
                 
+                # NW at 10:00 from timeline
+                nw_timeline = pm.get("networth_timeline", [])
+                nw_10 = nw_timeline[10] if len(nw_timeline) > 10 else None
+                
                 # Prepare stats object for image generator
                 match_stats = {
                     "result_text": f"{result_emoji}{match_type_label}",
@@ -912,7 +921,8 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                     "duration": duration_text,
                     "rank_name": rank_name if 'rank_name' in locals() else "Неизвестно",
                     "new_mmr": new_mmr,
-                    "mmr_diff": (new_mmr - manual_mmr) if (manual_mmr and new_mmr and is_ranked) else None
+                    "mmr_diff": (new_mmr - manual_mmr) if (manual_mmr and new_mmr and is_ranked) else None,
+                    "nw_10": nw_10
                 }
                 
                 try:

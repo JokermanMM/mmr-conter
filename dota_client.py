@@ -197,12 +197,13 @@ class DotaClient:
                   level
                   isTalent
                 }
-                # Detailed stats for timings
+                # Detailed stats for timings and timeline
                 stats {
-                  itemPurchases {
-                    itemId
-                    time
-                  }
+                    networthTimeline
+                    itemPurchases {
+                        itemId
+                        time
+                    }
                 }
               }
             }
@@ -257,7 +258,8 @@ class DotaClient:
                 "neutral_url": neutral_url,
                 "hero_short_name": player_stats.get("hero", {}).get("shortName"),
                 "item_purchases": player_stats.get("stats", {}).get("itemPurchases", []),
-                "abilities": player_stats.get("abilities", [])
+                "abilities": player_stats.get("abilities", []),
+                "networth_timeline": player_stats.get("stats", {}).get("networthTimeline", [])
             }
         }
 
