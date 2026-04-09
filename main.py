@@ -110,24 +110,17 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
         async with aiohttp.ClientSession(headers=headers) as session:
-            # 1. Background/Hero Banner
+            # 1. Background/Hero Banner (Portraits)
             hero_banner = None
             if hero_short_name:
-                # Try Steam Renders (more stable than Stratz for bots)
-                possible_urls = [
-                    f"https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/renders/{hero_short_name}.png",
-                    f"https://cdn.stratz.com/images/dota2/heroes/vert/{hero_short_name}.png"
-                ]
-                
-                for banner_url in possible_urls:
-                    try:
-                        async with session.get(banner_url, timeout=10.0) as resp:
-                            if resp.status == 200:
-                                hero_banner = Image.open(io.BytesIO(await resp.read())).convert("RGBA")
-                                logger.info(f"Successfully loaded hero banner from {banner_url}")
-                                break
-                    except Exception as e:
-                        logger.error(f"Error loading banner: {e}")
+                # Use reliable Steam CDN for standard portraits
+                banner_url = f"https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/{hero_short_name}.png"
+                try:
+                    async with session.get(banner_url, timeout=10.0) as resp:
+                        if resp.status == 200:
+                            hero_banner = Image.open(io.BytesIO(await resp.read())).convert("RGBA")
+                except Exception as e:
+                    logger.error(f"Error loading hero portrait: {e}")
             
             # 2. Rank Icon
             rank_img = None
@@ -168,21 +161,25 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
 
         # --- DRAWING ---
         
-        # Draw Hero Banner (Left Panel)
+        # Draw Hero Portrait (Left Panel)
         if hero_banner:
-            # Resize banner to fit height while maintaining aspect ratio
-            b_h = H
-            b_w = int(hero_banner.width * (b_h / hero_banner.height))
-            hero_banner = hero_banner.resize((b_w, b_h), Image.Resampling.LANCZOS)
-            canvas.paste(hero_banner, (0, 0), hero_banner)
+            # Scale portrait to fit width of left panel (~300px)
+            # Standard portrait is 256x144.
+            target_w = 300
+            target_h = int(hero_banner.height * (target_w / hero_banner.width))
+            hero_banner = hero_banner.resize((target_w, target_h), Image.Resampling.LANCZOS)
             
-            # Add a subtle gradient/shade on the right edge of the banner
-            shade = Image.new("RGBA", (150, H), (0, 0, 0, 0))
-            for x in range(150):
-                alpha = int(255 * (x / 150))
+            # Paste in the middle vertically
+            y_offset = (H - target_h) // 2
+            canvas.paste(hero_banner, (0, y_offset), hero_banner)
+            
+            # Overlay a shadow/gradient to the right
+            shade = Image.new("RGBA", (100, H), (0, 0, 0, 0))
+            for x in range(100):
+                alpha = int(255 * (x / 100))
                 for y in range(H):
                     shade.putpixel((x, y), (15, 15, 18, alpha))
-            canvas.paste(shade, (b_w - 150, 0), shade)
+            canvas.paste(shade, (target_w - 100, 0), shade)
         
         # Draw Header info
         res_text = stats.get("result_text", "МАТЧ")
@@ -245,53 +242,6 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
             # Draw circle background
             draw.ellipse([item_x + 6*75, item_y, item_x + 6*75 + ni_w, item_y + ni_h], fill=(30, 30, 35))
             canvas.paste(neutral_img, (item_x + 6*75, item_y), neutral_img)
-
-        # Draw Timeline Timestamps (Below Icons)
-        if item_purchases:
-            # Simple approach: map top 6 items in inventory to their earliest purchase time
-            # (Matches user's screenshot where items have timestamps below)
-            # This requires knowing which item is in which slot, but here we just show labels.
-            pass
-
-        # Draw Talents Tree Icon (Graphical)
-        talent_icon_y = 310
-        draw.text((320, talent_icon_y), "ТАЛАНТЫ", fill=(100, 100, 110), font=font_tiny)
-        
-        tree_x, tree_y = 320, 335
-        tree_size = 80
-        # Draw background circle
-        draw.ellipse([tree_x, tree_y, tree_x + tree_size, tree_y + tree_size], outline=(60, 60, 65), width=2)
-        
-        # Draw 8 dots in semi-circle below
-        dot_radius = 4
-        center_x, center_y = tree_x + tree_size // 2, tree_y + tree_size // 2
-        
-        if abilities:
-            # We track which levels were picked. 
-            # level_map = {10: "left" or "right"}
-            # This logic is simplified to showing 4 dots for picked levels.
-            picked_levels = sorted(list(set([a.get("level") for a in abilities if a.get("isTalent")])))
-            
-            # semi-circle angles for dots
-            angles = [120, 135, 150, 165, 15, 30, 45, 60] # Simplified logic for 8 dots
-            for i in range(8):
-                # Calculate dot position on the circle edge
-                import math
-                angle_rad = math.radians(180 - (210 - i*20)) # semi-circle logic
-                dx = (tree_size // 2 + 10) * math.cos(angle_rad)
-                dy = (tree_size // 2 + 10) * math.sin(angle_rad)
-                
-                # Highlight if level i//2 + 1 (simplified) is in picked_levels
-                # Or based on some logic. For /test, we light up 4 dots.
-                is_active = (i % 2 == 0) and ( (10 + (i//2)*5) in picked_levels )
-                dot_color = (255, 180, 0) if is_active else (60, 60, 65)
-                draw.ellipse([center_x + dx - dot_radius, center_y + dy - dot_radius, 
-                             center_x + dx + dot_radius, center_y + dy + dot_radius], fill=dot_color)
-            
-            # Draw a simple 'tree' branch icon in the center if possible
-            draw.line([center_x, center_y + 15, center_x, center_y - 15], fill=(100, 100, 110), width=3)
-            draw.line([center_x, center_y - 5, center_x + 10, center_y - 15], fill=(100, 100, 110), width=2)
-            draw.line([center_x, center_y - 5, center_x - 10, center_y - 15], fill=(100, 100, 110), width=2)
 
         # Draw MMR Change
         mmr_val = stats.get("new_mmr")
