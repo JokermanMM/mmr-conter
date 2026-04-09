@@ -75,105 +75,206 @@ def get_rank_info(mmr):
     
     return f"{name} {stars}", image_id
 
-async def generate_composite_image(hero_img_url, rank_icon_id, items_urls=None, neutral_url=None):
-    """Downloads hero image and overlays the rank icon, plus appends items bar underneath."""
+async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=None, neutral_url=None, item_purchases=None, abilities=None, ability_cache=None, stats=None):
+    """
+    Generates a premium modernized match card.
+    Layout: 900x500
+    - Left (0-300): Vertical hero banner.
+    - Right (300-900): Stats, Item Timings, and Talents.
+    """
     if not HAS_PILLOW:
         return None
 
-    if not hero_img_url:
-        return None
-        
+    W, H = 900, 500
+    canvas = Image.new("RGBA", (W, H), (15, 15, 18, 255))
+    draw = ImageDraw.Draw(canvas)
+    
+    # Load fonts
+    font_bold, font_reg, font_sm, font_tiny = None, None, None, None
+    font_paths = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "arialbd.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "arial.ttf"]
+    for path in font_paths:
+        try:
+            font_bold = ImageFont.truetype(path, 28)
+            font_reg = ImageFont.truetype(path, 18)
+            font_sm = ImageFont.truetype(path, 14)
+            font_tiny = ImageFont.truetype(path, 11)
+            break
+        except: continue
+    if not font_bold:
+        font_bold = ImageFont.load_default()
+        font_reg, font_sm, font_tiny = font_bold, font_bold, font_bold
+
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(hero_img_url) as resp:
-                if resp.status != 200:
-                    return None
-                hero_data = await resp.read()
+            # 1. Background/Hero Banner
+            hero_banner = None
+            if hero_short_name:
+                banner_url = f"https://cdn.stratz.com/images/dota2/heroes/{hero_short_name}_vert.png"
+                async with session.get(banner_url) as resp:
+                    if resp.status == 200:
+                        hero_banner = Image.open(io.BytesIO(await resp.read())).convert("RGBA")
             
-            items_data = []
+            # 2. Rank Icon
+            rank_img = None
+            if rank_icon_id:
+                rank_path = os.path.join("media", "ranks", f"{rank_icon_id}.png")
+                if os.path.exists(rank_path):
+                    rank_img = Image.open(rank_path).convert("RGBA")
+
+            # 3. Item Icons
+            items_imgs = []
+            item_timings = []
             if items_urls:
-                for url in items_urls:
+                # Find timing for each item in inventory
+                purchase_map = {}
+                if item_purchases:
+                    for p in item_purchases:
+                        iid = p.get("itemId")
+                        if iid not in purchase_map:
+                            purchase_map[iid] = p.get("time")
+
+                for i, url in enumerate(items_urls):
                     if url:
-                        try:
-                            r = await session.get(url)
-                            items_data.append(await r.read() if r.status == 200 else None)
-                        except:
-                            items_data.append(None)
+                        async with session.get(url) as r:
+                            items_imgs.append(Image.open(io.BytesIO(await r.read())).convert("RGBA") if r.status == 200 else None)
+                        
+                        # Get timing
+                        item_id = stats.get("item_ids", [None]*6)[i]
+                        item_timings.append(purchase_map.get(item_id))
                     else:
-                        items_data.append(None)
+                        items_imgs.append(None)
+                        item_timings.append(None)
             
-            neutral_data = None
+            neutral_img = None
             if neutral_url:
-                try:
-                    r = await session.get(neutral_url)
+                async with session.get(neutral_url) as r:
                     if r.status == 200:
-                        neutral_data = await r.read()
-                except:
-                    pass
-                
-        hero_img = Image.open(io.BytesIO(hero_data)).convert("RGBA")
+                        neutral_img = Image.open(io.BytesIO(await r.read())).convert("RGBA")
+
+        # --- DRAWING ---
         
-        # Determine items layout area
-        # Hero image is typically 256x144. We will add a bottom bar of ~35px height.
-        has_items = any(items_data) or neutral_data
-        item_bar_height = 36 if has_items else 0
-        final_height = hero_img.height + item_bar_height
+        # Draw Hero Banner (Left Panel)
+        if hero_banner:
+            # Resize banner to fit height while maintaining aspect ratio
+            b_h = H
+            b_w = int(hero_banner.width * (b_h / hero_banner.height))
+            hero_banner = hero_banner.resize((b_w, b_h), Image.Resampling.LANCZOS)
+            canvas.paste(hero_banner, (0, 0), hero_banner)
+            
+            # Add a subtle gradient/shade on the right edge of the banner
+            shade = Image.new("RGBA", (150, H), (0, 0, 0, 0))
+            for x in range(150):
+                alpha = int(255 * (x / 150))
+                for y in range(H):
+                    shade.putpixel((x, y), (15, 15, 18, alpha))
+            canvas.paste(shade, (b_w - 150, 0), shade)
         
-        # Create new canvas
-        canvas = Image.new("RGBA", (hero_img.width, final_height), (20, 20, 20, 255))
-        canvas.paste(hero_img, (0, 0))
+        # Draw Header info
+        res_text = stats.get("result_text", "МАТЧ")
+        res_color = (76, 175, 80) if "ПОБЕДА" in res_text else (244, 67, 54)
+        draw.text((320, 30), res_text, fill=res_color, font=font_bold)
+        draw.text((320, 70), stats.get("hero_name", "Герой"), fill=(255, 255, 255), font=font_reg)
         
-        # Paste Rank Icon (bottom right of the HERO area, not canvas)
-        if rank_icon_id:
-            rank_path = os.path.join("media", "ranks", f"{rank_icon_id}.png")
-            if os.path.exists(rank_path):
-                rank_img = Image.open(rank_path).convert("RGBA")
+        # Draw Main Stats Dashboard
+        stats_y = 120
+        stats_x = 320
+        def draw_stat(x, y, label, value, color=(255, 255, 255)):
+            draw.text((x, y), label, fill=(150, 150, 160), font=font_tiny)
+            draw.text((x, y + 15), str(value), fill=color, font=font_reg)
+
+        draw_stat(stats_x, stats_y, "KDA", f"{stats.get('kills')}/{stats.get('deaths')}/{stats.get('assists')}")
+        draw_stat(stats_x + 100, stats_y, "GPM/XPM", f"{stats.get('gpm')}/{stats.get('xpm')}")
+        draw_stat(stats_x + 220, stats_y, "NET WORTH", f"{stats.get('net_worth'):,}".replace(",", " "))
+        draw_stat(stats_x + 360, stats_y, "DURATION", stats.get("duration", "00:00"))
+
+        # Draw Rank
+        if rank_img:
+            r_w = 100
+            r_h = int(rank_img.height * (r_w / rank_img.width))
+            rank_img = rank_img.resize((r_w, r_h), Image.Resampling.LANCZOS)
+            canvas.paste(rank_img, (W - 130, 20), rank_img)
+            draw.text((W - 130, 110), stats.get("rank_name", ""), fill=(200, 200, 210), font=font_sm)
+
+        # Draw Items with Timings
+        draw.text((320, 200), "ПРЕДМЕТЫ И ТАЙМИНГИ", fill=(100, 100, 110), font=font_tiny)
+        item_x = 320
+        item_y = 225
+        icon_w, icon_h = 60, 45
+        
+        # Sort items by timing for the timeline
+        # First, show current inventory (the 6 icons), but if we have timing data, let's use it.
+        # However, following the user's request, let's show items next to timing.
+        
+        for i, item_icon in enumerate(items_imgs):
+            # Draw Slot Frame
+            draw.rectangle([item_x + i*75, item_y, item_x + i*75 + icon_w, item_y + icon_h], outline=(40, 40, 45), width=1)
+            if item_icon:
+                item_icon = item_icon.resize((icon_w, icon_h), Image.Resampling.LANCZOS)
+                canvas.paste(item_icon, (item_x + i*75, item_y), item_icon)
                 
-                # Scale rank image to ~40% of hero image height
-                target_height = int(hero_img.height * 0.45)
-                aspect_ratio = rank_img.width / rank_img.height
-                target_width = int(target_height * aspect_ratio)
-                rank_img = rank_img.resize((target_width, target_height), Image.Resampling.LANCZOS)
-                
-                # Paste in bottom right corner of the HERO image (above item bar)
-                padding = int(hero_img.height * 0.05)
-                x = hero_img.width - rank_img.width - padding
-                y = hero_img.height - rank_img.height - padding
-                
-                canvas.paste(rank_img, (x, y), rank_img)
-                
-        # Paste Items
-        if has_items:
-            # We have 6 main items and 1 neutral. Let's arrange them.
-            # Total width = 256. 6 items * 34 wide = 204. Gap = 2. 
-            item_w = 34
-            item_h = int(item_w * 64/85) # native aspect ratio is roughly 85:64
+            # Draw purchase time
+            t = item_timings[i] if i < len(item_timings) else None
+            if t is not None:
+                t_str = format_duration(t)
+                # Center time under icon
+                draw.text((item_x + i*75 + 10, item_y + icon_h + 5), t_str, fill=(180, 180, 190), font=font_tiny)
+
+        # Draw Neutral Item
+        if neutral_img:
+            ni_w, ni_h = 45, 45
+            neutral_img = neutral_img.resize((ni_w, ni_h), Image.Resampling.LANCZOS)
+            # Draw circle background
+            draw.ellipse([item_x + 6*75, item_y, item_x + 6*75 + ni_w, item_y + ni_h], fill=(30, 30, 35))
+            canvas.paste(neutral_img, (item_x + 6*75, item_y), neutral_img)
+
+        # Draw Timeline Timestamps (Below Icons)
+        if item_purchases:
+            # Simple approach: map top 6 items in inventory to their earliest purchase time
+            # (Matches user's screenshot where items have timestamps below)
+            # This requires knowing which item is in which slot, but here we just show labels.
+            pass
+
+        # Draw Talents
+        draw.text((320, 310), "ВЫБРАННЫЕ ТАЛАНТЫ", fill=(100, 100, 110), font=font_tiny)
+        talent_y = 335
+        if abilities and ability_cache:
+            talents = [a for a in abilities if a.get("isTalent")]
+            talents = sorted(talents, key=lambda x: x.get("level", 0))
             
-            start_x = 4
-            start_y = hero_img.height + (item_bar_height - item_h) // 2
-            
-            for i, img_bytes in enumerate(items_data):
-                if img_bytes:
-                    item_img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
-                    item_img = item_img.resize((item_w, item_h), Image.Resampling.LANCZOS)
-                    canvas.paste(item_img, (start_x + i * (item_w + 2), start_y), item_img)
-            
-            if neutral_data:
-                neut_img = Image.open(io.BytesIO(neutral_data)).convert("RGBA")
-                neut_w = 30
-                neut_h = int(neut_w * 64/85)
-                neut_img = neut_img.resize((neut_w, neut_h), Image.Resampling.LANCZOS)
+            for i, tal in enumerate(talents):
+                tid = tal.get("abilityId")
+                t_info = ability_cache.get(tid, {})
+                t_name = t_info.get("displayName", f"Талант {tal.get('level')}")
                 
-                # Create a radial mask or just paste it
-                n_x = hero_img.width - neut_w - 4
-                n_y = hero_img.height + (item_bar_height - neut_h) // 2
-                canvas.paste(neut_img, (n_x, n_y), neut_img)
+                # Draw level circle
+                circle_r = 12
+                draw.ellipse([320, talent_y + i*35, 320 + circle_r*2, talent_y + i*35 + circle_r*2], fill=(45, 45, 55))
+                draw.text((320 + 7, talent_y + i*35 + 4), str(tal.get("level")), fill=(255, 215, 0), font=font_tiny)
+                
+                # Draw talent text
+                draw.text((355, talent_y + i*35 + 4), t_name, fill=(200, 200, 210), font=font_sm)
+
+        # Draw MMR Change
+        mmr_val = stats.get("new_mmr")
+        mmr_diff = stats.get("mmr_diff")
+        if mmr_val:
+            draw.text((320, H - 60), "MMR", fill=(150, 150, 160), font=font_tiny)
+            mmr_str = f"{mmr_val}"
+            draw.text((320, H - 45), mmr_str, fill=(255, 255, 255), font=font_bold)
+            if mmr_diff:
+                diff_str = f"({'+' if mmr_diff > 0 else ''}{mmr_diff})"
+                diff_col = (76, 175, 80) if mmr_diff > 0 else (244, 67, 54)
+                draw.text((320 + 80, H - 45), diff_str, fill=diff_col, font=font_reg)
 
         output = io.BytesIO()
-        # Convert back to RGB for typically sharing, or preserve RGBA
         canvas.save(output, format="PNG")
         output.seek(0)
         return output
+    except Exception as e:
+        logger.error(f"Error generating premium match image: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return None
     except Exception as e:
         logger.error(f"Error generating composite image: {e}")
         return None
@@ -341,39 +442,47 @@ async def test_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     gpm, xpm = 750, 820
     match_id = 7123456789
     
-    hero_info = await get_hero_info(hero_id)
-    hero_name = hero_info["name"]
-    hero_img = hero_info["img_url"]
-    
-    result_emoji = "✨ ПОБЕДА ✨" if is_win else "💀 ПОРАЖЕНИЕ"
-    
-    user = db.get_user(chat_id)
-    manual_mmr = user.get("manual_mmr") if user else 1500
-    
     rank_name, rank_icon_id = get_rank_info(manual_mmr + 25)
     
-    mmr_change_text = (
-        f"🎰 **ММР:** `{manual_mmr + 25}` (**+25**)\n"
-        f"🏆 **Ранг:** {rank_name}"
-    )
+    stats = {
+        "result_text": result_emoji,
+        "hero_name": hero_name,
+        "kills": kills, "deaths": deaths, "assists": assists,
+        "gpm": gpm, "xpm": xpm, "net_worth": 24500,
+        "duration": "38:15",
+        "rank_name": rank_name,
+        "new_mmr": manual_mmr + 25,
+        "mmr_diff": 25
+    }
     
     msg = (
         f"**{result_emoji}** 🪄 (Тест)\n\n"
         f"👾 **Герой:** {hero_name}\n"
-        f"🩸 **KDA:** `12 / 2 / 8`\n"
-        f"💰 **GPM:** `750` | 🎓 **XPM:** `820`\n"
+        f"🩸 **KDA:** `{kills} / {deaths} / {assists}`\n"
+        f"💰 **GPM:** `{gpm}` | 🎓 **XPM:** `{xpm}`\n"
         f"💵 **Networth:** `24 500`\n"
         f"⏱️ **Длительность:** `38:15`\n\n"
-        f"{mmr_change_text}\n"
+        f"🎰 **ММР:** `{manual_mmr + 25}` (**+25**)\n"
+        f"🏆 **Ранг:** {rank_name}\n"
         f"\n🔥🔥🔥 3 победы подряд!\n"
         f"\n🎖️ *Убийца! — 10+ убийств*\n"
         f"\n🔗 [Dotabuff](https://www.dotabuff.com/matches/{match_id})"
     )
     
-    mock_items = ["https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/blink.png", None, None, None, None, None]
+    mock_items = ["https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/blink.png"] + [None]*5
+    abilities_dict = await dota.get_abilities_dict()
     
     try:
-        composite_io = await generate_composite_image(hero_img, rank_icon_id, mock_items, None)
+        composite_io = await generate_composite_image(
+            hero_short_name="spirit_breaker", 
+            rank_icon_id=rank_icon_id, 
+            items_urls=mock_items, 
+            neutral_url=None,
+            stats={**stats, "item_ids": [1, 0, 0, 0, 0, 0]}, # Mock item ID 1 for Blink
+            item_purchases=[{"itemId": 1, "time": 740}], # 12:20
+            abilities=[{"abilityId": 597, "level": 10, "isTalent": True}],
+            ability_cache=abilities_dict
+        )
         if composite_io:
             await context.bot.send_photo(chat_id=chat_id, photo=composite_io, caption=msg, parse_mode="Markdown")
         else:
@@ -662,6 +771,12 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                 items_urls = pm.get("items_urls", [])
                 neutral_url = pm.get("neutral_url")
                 
+                # New fields for premium card
+                hero_short_name = pm.get("hero_short_name")
+                item_purchases = pm.get("item_purchases", [])
+                abilities_data = pm.get("abilities", [])
+                ability_cache = await dota.get_abilities_dict()
+                
                 result_emoji = "✨ ПОБЕДА ✨" if is_win else "💀 ПОРАЖЕНИЕ"
                 
                 manual_mmr = user_info.get("manual_mmr")
@@ -749,8 +864,29 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                 
                 msg += f"\n\n🔗 [Dotabuff](https://www.dotabuff.com/matches/{match_id})"
                 
+                # Prepare stats object for image generator
+                match_stats = {
+                    "result_text": f"{result_emoji}{match_type_label}",
+                    "hero_name": hero_name,
+                    "kills": kills, "deaths": deaths, "assists": assists,
+                    "gpm": gpm, "xpm": xpm, "net_worth": nw,
+                    "duration": duration_text,
+                    "rank_name": rank_name if 'rank_name' in locals() else "Неизвестно",
+                    "new_mmr": new_mmr,
+                    "mmr_diff": (new_mmr - manual_mmr) if (manual_mmr and new_mmr and is_ranked) else None
+                }
+                
                 try:
-                    composite_io = await generate_composite_image(hero_img, rank_icon_id, items_urls, neutral_url)
+                    composite_io = await generate_composite_image(
+                        hero_short_name=hero_short_name, 
+                        rank_icon_id=rank_icon_id, 
+                        items_urls=items_urls, 
+                        neutral_url=neutral_url,
+                        item_purchases=item_purchases,
+                        abilities=abilities_data,
+                        ability_cache=ability_cache,
+                        stats={**match_stats, "item_ids": pm.get("item_ids", [None]*6)}
+                    )
                     
                     if composite_io:
                         await context.bot.send_photo(chat_id=int(chat_id), photo=composite_io, caption=msg, parse_mode="Markdown")

@@ -23,6 +23,7 @@ class DotaClient:
         
         self.hero_cache = {}
         self.item_id_map = {}
+        self.ability_cache = {}
 
     async def _query_stratz(self, query: str, variables: dict = None) -> dict | None:
         """Helper to send GraphQL queries to Stratz."""
@@ -70,6 +71,29 @@ class DotaClient:
                 except Exception as e:
                     logger.error(f"Error fetching items: {e}")
         return self.item_id_map
+
+    async def get_abilities_dict(self) -> dict:
+        """Fetch abilities/talents info from Stratz constants."""
+        if not self.ability_cache:
+            # We use GraphQL to fetch all abilities for mapping
+            query = """
+            {
+              constants {
+                abilities {
+                  id
+                  name
+                  displayName
+                  description
+                  isTalent
+                }
+              }
+            }
+            """
+            data = await self._query_stratz(query)
+            if data and "data" in data and "constants" in data["data"]:
+                for ability in data["data"]["constants"]["abilities"]:
+                    self.ability_cache[ability["id"]] = ability
+        return self.ability_cache
 
     async def get_player(self, steam_id: int) -> dict | None:
         """Get player profile info via Stratz."""
@@ -144,7 +168,10 @@ class DotaClient:
               players {
                 steamAccountId
                 isVictory
-                heroId
+                hero {
+                  id
+                  shortName
+                }
                 numKills
                 numDeaths
                 numAssists
@@ -158,6 +185,19 @@ class DotaClient:
                 item4Id
                 item5Id
                 neutral0Id
+                # Abilities and talents
+                abilities {
+                  abilityId
+                  level
+                  isTalent
+                }
+                # Detailed stats for timings
+                stats {
+                  itemPurchases {
+                    itemId
+                    time
+                  }
+                }
               }
             }
           }
@@ -206,8 +246,12 @@ class DotaClient:
                 "net_worth": player_stats["netWorth"],
                 "lobby_type": latest["lobbyType"],
                 "game_mode": latest["gameMode"],
+                "item_ids": item_ids,
                 "items_urls": items_urls,
-                "neutral_url": neutral_url
+                "neutral_url": neutral_url,
+                "hero_short_name": player_stats.get("hero", {}).get("shortName"),
+                "item_purchases": player_stats.get("stats", {}).get("itemPurchases", []),
+                "abilities": player_stats.get("abilities", [])
             }
         }
 
