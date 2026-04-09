@@ -529,14 +529,9 @@ async def test_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown", disable_web_page_preview=True)
 
 async def lastgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Sends the actual latest match result without registering it in DB. Admin only."""
+    """Sends the actual latest match result without registering it in DB."""
     chat_id = str(update.effective_chat.id)
     
-    # Admin check
-    if ADMIN_CHAT_ID and str(chat_id) != str(ADMIN_CHAT_ID):
-        await update.message.reply_text("🔒 Эта команда доступна только администратору бота.")
-        return
-        
     user_info = db.get_user(chat_id)
     if not user_info or not user_info.get("steam_id"):
         await update.message.reply_text("❌ Привязанный Steam ID не найден. Используйте /set_id")
