@@ -3,8 +3,8 @@ import asyncio
 import os
 import logging
 from datetime import time, datetime, timezone, timedelta
-from telegram import Update, InputMediaPhoto, BotCommand
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram import Update, InputMediaPhoto, BotCommand, BotCommandScopeChat, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
 from dota_client import DotaClient
 from data_manager import DataManager
 from dotenv import load_dotenv
@@ -41,6 +41,66 @@ if not BOT_TOKEN:
 
 db = DataManager()
 dota = DotaClient(stratz_token=STRATZ_TOKEN)
+
+# --- Dynamic Menus & UI ---
+GUEST_COMMANDS = [
+    BotCommand("start", "🚀 Запустить бота"),
+    BotCommand("set_id", "🆔 Привязать ID (пример: /set_id <ID>)"),
+]
+
+MEMBER_COMMANDS = [
+    BotCommand("lastgame", "🕹 Последний матч"),
+    BotCommand("status", "🏅 Мой статус"),
+    BotCommand("graph", "📊 График MMR"),
+    BotCommand("set_mmr", "🎯 MMR"),
+]
+
+async def update_user_menu(bot, chat_id, user_info=None):
+    """Sets the Telegram menu button commands based on user status."""
+    if not user_info:
+        user_info = db.get_user(chat_id)
+    
+    is_registered = user_info and user_info.get("steam_id")
+    commands = MEMBER_COMMANDS if is_registered else GUEST_COMMANDS
+    
+    try:
+        await bot.set_my_commands(
+            commands=commands, 
+            scope=BotCommandScopeChat(chat_id=int(chat_id))
+        )
+    except Exception as e:
+        logger.error(f"Error updating menu for {chat_id}: {e}")
+
+def get_main_keyboard():
+    """Returns the premium dashboard inline keyboard."""
+    keyboard = [
+        [
+            InlineKeyboardButton("🕹 Последняя игра", callback_data="lastgame"),
+            InlineKeyboardButton("🏅 Статус", callback_data="status")
+        ],
+        [
+            InlineKeyboardButton("📊 График MMR", callback_data="graph"),
+            InlineKeyboardButton("🎯 MMR", callback_data="set_mmr")
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+# --- Callback Handler for Inline Buttons ---
+async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles clicks on the premium dashboard buttons."""
+    query = update.callback_query
+    await query.answer()
+    
+    cmd = query.data
+    if cmd == "lastgame":
+        await lastgame_command(update, context)
+    elif cmd == "status":
+        await status_command(update, context)
+    elif cmd == "graph":
+        await graph_command(update, context)
+    elif cmd == "set_mmr":
+        await update.effective_message.reply_text("Чтобы изменить MMR, введите команду: `/set_mmr <цифры>`", parse_mode="Markdown")
+
 
 def get_rank_info(mmr):
     """Calculate Dota 2 rank tier and local image ID from MMR."""
@@ -321,6 +381,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "`/set_id <твой_id>`"
     )
     
+    chat_id = update.effective_chat.id
+    # Refresh menu to GUEST mode
+    await update_user_menu(context.bot, chat_id)
+    
     # Send screenshots if they exist
     media = []
     for i in range(1, 4):
@@ -334,6 +398,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Error sending media: {e}")
 
+    # For new users, show guests commands button if they are not registered
     await update.message.reply_text(welcome_msg, parse_mode="Markdown")
 
 async def set_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -374,6 +439,9 @@ async def set_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Save the ID regardless of API response
         db.set_user(chat_id, steam_id, last_match_id, last_mmr)
         
+        # Refresh menu to MEMBER mode
+        await update_user_menu(context.bot, chat_id)
+        
         if player_name:
             rank_name, rank_icon_id = get_rank_info(last_mmr)
             msg = (
@@ -391,7 +459,7 @@ async def set_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"но отслеживание запущено.\n\n"
                 f"Введи свой реальный MMR командой:\n`/set_mmr <число>`"
             )
-        await update.message.reply_text(msg, parse_mode="Markdown")
+        await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=get_main_keyboard())
     except ValueError:
         await update.message.reply_text("❌ ID должен быть числом. Пример: `/set_id 12345678`", parse_mode="Markdown")
     except Exception as e:
@@ -625,9 +693,9 @@ async def lastgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await msg_wait.delete()
         if composite_io:
-            await context.bot.send_photo(chat_id=int(chat_id), photo=composite_io, caption=msg, parse_mode="Markdown")
+            await context.bot.send_photo(chat_id=int(chat_id), photo=composite_io, caption=msg, parse_mode="Markdown", reply_markup=get_main_keyboard())
         else:
-            await context.bot.send_message(chat_id=int(chat_id), text=msg, parse_mode="Markdown", disable_web_page_preview=True)
+            await context.bot.send_message(chat_id=int(chat_id), text=msg, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=get_main_keyboard())
             
     except Exception as e:
         logger.error(f"Error in lastgame command: {e}")
@@ -698,7 +766,8 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id=chat_id,
         message_id=msg.message_id,
         text=status_text,
-        parse_mode="Markdown"
+        parse_mode="Markdown",
+        reply_markup=get_main_keyboard()
     )
 
 # --- Achievements ---
@@ -774,7 +843,8 @@ async def graph_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id=int(chat_id),
         photo=buf,
         caption=f"📈 **График MMR** (последние {len(history)} матчей)",
-        parse_mode="Markdown"
+        parse_mode="Markdown",
+        reply_markup=get_main_keyboard()
     )
 
 def generate_mmr_graph(history):
@@ -1037,11 +1107,11 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                     )
                     
                     if composite_io:
-                        await context.bot.send_photo(chat_id=int(chat_id), photo=composite_io, caption=msg, parse_mode="Markdown")
+                        await context.bot.send_photo(chat_id=int(chat_id), photo=composite_io, caption=msg, parse_mode="Markdown", reply_markup=get_main_keyboard())
                     elif hero_img:
-                        await context.bot.send_photo(chat_id=int(chat_id), photo=hero_img, caption=msg, parse_mode="Markdown")
+                        await context.bot.send_photo(chat_id=int(chat_id), photo=hero_img, caption=msg, parse_mode="Markdown", reply_markup=get_main_keyboard())
                     else:
-                        await context.bot.send_message(chat_id=int(chat_id), text=msg, parse_mode="Markdown", disable_web_page_preview=True)
+                        await context.bot.send_message(chat_id=int(chat_id), text=msg, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=get_main_keyboard())
                 except Exception as e:
                     logger.error(f"Error sending match msg: {e}")
                     await context.bot.send_message(chat_id=int(chat_id), text=msg, parse_mode="Markdown", disable_web_page_preview=True)
@@ -1193,6 +1263,7 @@ async def main():
     application.add_handler(CommandHandler("lastgame", lastgame_command))
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("graph", graph_command))
+    application.add_handler(CallbackQueryHandler(callback_handler))
     
     # Job queue
     job_queue = application.job_queue
@@ -1215,13 +1286,15 @@ async def main():
         await application.start()
         
         # Set up the menu button and command autocomplete
-        await application.bot.set_my_commands([
-            BotCommand("start", "Запустить бота"),
-            BotCommand("set_id", "Привязать ID (пример: /set_id <ID>)"),
-            BotCommand("set_mmr", "Установить MMR (пример: /set_mmr <ММР>)"),
-            BotCommand("status", "Показать статус аккаунта"),
-            BotCommand("graph", "График MMR"),
-        ])
+        # Set up default guest commands
+        await application.bot.set_my_commands(GUEST_COMMANDS)
+        
+        # Migration: Update menus for all existing users in the background
+        users = db.get_all_users()
+        logger.info(f"Updating menus for {len(users)} users...")
+        for cid, uinfo in users.items():
+            await update_user_menu(application.bot, cid, uinfo)
+            await asyncio.sleep(0.1) # Rate limit protection
         
         # Wait a few seconds to let the old Render instance shut down completely to avoid Conflict errors
         await asyncio.sleep(5)
