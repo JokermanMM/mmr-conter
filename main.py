@@ -647,7 +647,8 @@ async def graph_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Сначала привяжи аккаунт: /set_id")
         return
     
-    history = db.get_mmr_history(chat_id, limit=30)
+    # User requested specifically 10 latest games (rolling window)
+    history = db.get_mmr_history(chat_id, limit=10)
     if len(history) < 2:
         await update.message.reply_text("📈 Недостаточно данных. Сыграй ещё несколько рейтинговых матчей!")
         return
