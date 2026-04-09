@@ -270,6 +270,14 @@ class DotaClient:
         url = f"{self.OPENDOTA_URL}/players/{steam_id}"
         async with httpx.AsyncClient() as client:
             try:
+                # Force OpenDota to sync with Valve API first 
+                # (essential because otherwise recentMatches is cached for a long time)
+                refresh_url = f"{self.OPENDOTA_URL}/players/{steam_id}/refresh"
+                await client.post(refresh_url, headers=self.headers, timeout=15.0)
+            except Exception as e:
+                logger.error(f"OpenDota refresh error: {e}")
+                
+            try:
                 r = await client.get(url, headers=self.headers, timeout=15.0)
                 if r.status_code == 200:
                     pdata = r.json()
