@@ -437,10 +437,17 @@ async def test_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Example mock data
     is_win = True
+    result_emoji = "✨ ПОБЕДА ✨"
     hero_id = 71  # Spirit Breaker
     kills, deaths, assists = 12, 2, 8
     gpm, xpm = 750, 820
     match_id = 7123456789
+    
+    hero_info = await get_hero_info(hero_id)
+    hero_name = hero_info["name"]
+    
+    user = db.get_user(chat_id)
+    manual_mmr = (user.get("manual_mmr") or 1500) if user else 1500
     
     rank_name, rank_icon_id = get_rank_info(manual_mmr + 25)
     

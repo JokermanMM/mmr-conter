@@ -18,7 +18,8 @@ class DotaClient:
             self.stratz_headers = {
                 "Authorization": f"Bearer {stratz_token}",
                 "Content-Type": "application/json",
-                "User-Agent": "Dota2MMRBot/1.0"
+                # Using a browser-like UA to avoid Cloudflare blocks
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             }
         
         self.hero_cache = {}
@@ -39,10 +40,15 @@ class DotaClient:
                     
                 r = await client.post(self.STRATZ_URL, json=payload, headers=self.stratz_headers, timeout=20.0)
                 if r.status_code != 200:
-                    logger.error(f"Stratz request failed: {r.status_code} - {r.text}")
+                    logger.error(f"Stratz request failed: {r.status_code}")
                     return None
                 
-                resp_json = r.json()
+                try:
+                    resp_json = r.json()
+                except Exception:
+                    logger.error("Stratz returned non-JSON response (possibly Cloudflare block)")
+                    return None
+
                 if "errors" in resp_json:
                     logger.error(f"Stratz GraphQL errors: {resp_json['errors']}")
                 return resp_json
