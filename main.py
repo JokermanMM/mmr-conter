@@ -113,10 +113,26 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
             # 1. Background/Hero Banner
             hero_banner = None
             if hero_short_name:
-                banner_url = f"https://cdn.stratz.com/images/dota2/heroes/vert/{hero_short_name}.png"
-                async with session.get(banner_url) as resp:
-                    if resp.status == 200:
-                        hero_banner = Image.open(io.BytesIO(await resp.read())).convert("RGBA")
+                # Try multiple URL patterns for vertical banners
+                possible_urls = [
+                    f"https://cdn.stratz.com/images/dota2/heroes/vert/{hero_short_name}.png",
+                    f"https://cdn.stratz.com/images/dota2/heroes/{hero_short_name}_vert.png",
+                    f"https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/{hero_short_name}_vert.png"
+                ]
+                
+                for banner_url in possible_urls:
+                    try:
+                        async with session.get(banner_url, timeout=10.0) as resp:
+                            if resp.status == 200:
+                                hero_banner = Image.open(io.BytesIO(await resp.read())).convert("RGBA")
+                                logger.info(f"Successfully loaded hero banner from {banner_url}")
+                                break
+                            else:
+                                logger.warning(f"Failed to load banner from {banner_url}: Status {resp.status}")
+                    except Exception as e:
+                        logger.error(f"Error loading banner from {banner_url}: {e}")
+            else:
+                logger.warning("No hero_short_name provided for banner")
             
             # 2. Rank Icon
             rank_img = None
@@ -190,9 +206,10 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
             draw.text((x, y + 15), str(value), fill=color, font=font_reg)
 
         draw_stat(stats_x, stats_y, "KDA", f"{stats.get('kills')}/{stats.get('deaths')}/{stats.get('assists')}")
-        draw_stat(stats_x + 100, stats_y, "GPM/XPM", f"{stats.get('gpm')}/{stats.get('xpm')}")
-        draw_stat(stats_x + 220, stats_y, "NET WORTH", f"{stats.get('net_worth'):,}".replace(",", " "))
-        draw_stat(stats_x + 360, stats_y, "DURATION", stats.get("duration", "00:00"))
+        draw_stat(stats_x + 85, stats_y, "GPM/XPM", f"{stats.get('gpm')}/{stats.get('xpm')}")
+        draw_stat(stats_x + 185, stats_y, "NW 10:00", f"{stats.get('nw_10', 0):,}".replace(",", " "), color=(255, 215, 0))
+        draw_stat(stats_x + 300, stats_y, "NET WORTH", f"{stats.get('net_worth', 0):,}".replace(",", " "))
+        draw_stat(stats_x + 420, stats_y, "DURATION", stats.get("duration", "00:00"))
 
         # Draw Rank
         if rank_img:
@@ -225,11 +242,6 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
                 t_str = format_duration(t)
                 # Center time under icon
                 draw.text((item_x + i*75 + 10, item_y + icon_h + 5), t_str, fill=(180, 180, 190), font=font_tiny)
-
-        # Draw Networth at 10m
-        nw_10 = stats.get("nw_10")
-        if nw_10:
-            draw.text((320, item_y + icon_h + 30), f"NETWORTH НА 10:00: {nw_10:,}".replace(",", " "), fill=(255, 215, 0), font=font_sm)
 
         # Draw Neutral Item
         if neutral_img:
@@ -514,7 +526,12 @@ async def test_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         {"abilityId": 600, "level": 25, "isTalent": True}
     ]
     
-    abilities_dict = await dota.get_abilities_dict()
+    abilities_dict = await dota.get_abilities_dict() or {
+        597: {"displayName": "+1.5s к длительности Charge"},
+        598: {"displayName": "+10 к урону за ед. скорости"},
+        599: {"displayName": "-3s перезарядки Bulldog"},
+        600: {"displayName": "500 ко все радиусу Greater Bash"}
+    }
     
     try:
         composite_io = await generate_composite_image(
