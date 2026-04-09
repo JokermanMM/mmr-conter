@@ -203,9 +203,12 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
             draw.text((x, y), label, fill=(150, 150, 160), font=font_tiny)
             draw.text((x, y + 15), str(value), fill=color, font=font_reg)
 
+        nw_10_val = stats.get('nw_10')
+        nw_10_str = f"{nw_10_val:,}".replace(",", " ") if nw_10_val is not None else "N/A"
+        
         draw_stat(stats_x, stats_y, "KDA", f"{stats.get('kills')}/{stats.get('deaths')}/{stats.get('assists')}")
         draw_stat(stats_x + 85, stats_y, "GPM/XPM", f"{stats.get('gpm')}/{stats.get('xpm')}")
-        draw_stat(stats_x + 190, stats_y, "NW 10:00", f"{stats.get('nw_10', 0):,}".replace(",", " "))
+        draw_stat(stats_x + 190, stats_y, "NW 10:00", nw_10_str)
         draw_stat(stats_x + 280, stats_y, "NET WORTH", f"{stats.get('net_worth', 0):,}".replace(",", " "))
         
         draw_stat(stats_x + 375, stats_y, "DURATION", stats.get("duration", "00:00"))
