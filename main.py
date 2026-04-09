@@ -254,13 +254,11 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
 
         # Draw Neutral Item
         if neutral_img:
-            ni_w, ni_h = 45, 45
-            neutral_img = neutral_img.resize((ni_w, ni_h), Image.Resampling.LANCZOS)
-            # Draw circle background
-            draw.ellipse([item_x + 6*75, item_y, item_x + 6*75 + ni_w, item_y + ni_h], fill=(30, 30, 35))
+            # Making neutral item same width/height as regular items
+            neutral_img = neutral_img.resize((icon_w, icon_h), Image.Resampling.LANCZOS)
+            # Draw standard rectangular slot frame
+            draw.rectangle([item_x + 6*75, item_y, item_x + 6*75 + icon_w, item_y + icon_h], outline=(40, 40, 45), width=1)
             canvas.paste(neutral_img, (item_x + 6*75, item_y), neutral_img)
-
-        # Removed old MMR drawing block as it is now in the stats row
 
         output = io.BytesIO()
         canvas.save(output, format="PNG")
