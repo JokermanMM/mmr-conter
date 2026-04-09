@@ -175,6 +175,14 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
             # Paste symmetrically at 10, 15
             canvas.paste(hero_banner, (10, 15), hero_banner)
         
+        # Draw Rank next to header text
+        if rank_img:
+            r_w = 45
+            r_h = int(rank_img.height * (r_w / rank_img.width))
+            rank_img = rank_img.resize((r_w, r_h), Image.Resampling.LANCZOS)
+            canvas.paste(rank_img, (530, 8), rank_img)
+            draw.text((585, 23), stats.get("rank_name", ""), fill=(200, 200, 210), font=font_reg)
+
         # Draw Header info
         res_text = stats.get("result_text", "МАТЧ")
         res_text = res_text.replace("✨", "").replace("💀", "").strip()
@@ -192,29 +200,21 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
             draw.text((x, y + 15), str(value), fill=color, font=font_reg)
 
         draw_stat(stats_x, stats_y, "KDA", f"{stats.get('kills')}/{stats.get('deaths')}/{stats.get('assists')}")
-        draw_stat(stats_x + 75, stats_y, "GPM/XPM", f"{stats.get('gpm')}/{stats.get('xpm')}")
-        draw_stat(stats_x + 165, stats_y, "NW 10:00", f"{stats.get('nw_10', 0):,}".replace(",", " "))
-        draw_stat(stats_x + 245, stats_y, "NET WORTH", f"{stats.get('net_worth', 0):,}".replace(",", " "))
+        draw_stat(stats_x + 85, stats_y, "GPM/XPM", f"{stats.get('gpm')}/{stats.get('xpm')}")
+        draw_stat(stats_x + 195, stats_y, "NW 10:00", f"{stats.get('nw_10', 0):,}".replace(",", " "))
+        draw_stat(stats_x + 285, stats_y, "NET WORTH", f"{stats.get('net_worth', 0):,}".replace(",", " "))
         
         # Add MMR back to the stats row
         mmr_val = stats.get("new_mmr")
         mmr_diff = stats.get("mmr_diff")
         if mmr_val:
-            draw_stat(stats_x + 345, stats_y, "MMR", str(mmr_val))
+            draw_stat(stats_x + 395, stats_y, "MMR", str(mmr_val))
             if mmr_diff:
                 diff_str = f" ({'+' if mmr_diff > 0 else ''}{mmr_diff})"
                 diff_col = (76, 175, 80) if mmr_diff > 0 else (244, 67, 54)
-                draw.text((stats_x + 386, stats_y + 15), diff_str, fill=diff_col, font=font_reg)
+                draw.text((stats_x + 395 + 42, stats_y + 15), diff_str, fill=diff_col, font=font_reg)
 
-        draw_stat(stats_x + 460, stats_y, "DURATION", stats.get("duration", "00:00"))
-
-        # Draw Rank
-        if rank_img:
-            r_w = 90
-            r_h = int(rank_img.height * (r_w / rank_img.width))
-            rank_img = rank_img.resize((r_w, r_h), Image.Resampling.LANCZOS)
-            canvas.paste(rank_img, (W - 120, 15), rank_img)
-            draw.text((W - 120, 85), stats.get("rank_name", ""), fill=(200, 200, 210), font=font_sm)
+        draw_stat(stats_x + 510, stats_y, "DURATION", stats.get("duration", "00:00"))
 
         # Draw Items with Timings
         draw.text((315, 155), "ПРЕДМЕТЫ И ТАЙМИНГИ", fill=(100, 100, 110), font=font_tiny)
