@@ -85,7 +85,7 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
     if not HAS_PILLOW:
         return None
 
-    W, H = 900, 380
+    W, H = 900, 280
     canvas = Image.new("RGBA", (W, H), (15, 15, 18, 255))
     draw = ImageDraw.Draw(canvas)
     
@@ -167,8 +167,8 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
             target_h = int(hero_banner.height * (target_w / hero_banner.width))
             hero_banner = hero_banner.resize((target_w, target_h), Image.Resampling.LANCZOS)
             
-            # Move higher: y_offset = 20 instead of centering
-            canvas.paste(hero_banner, (0, 20), hero_banner)
+            # Move higher: y_offset = 15 instead of centering
+            canvas.paste(hero_banner, (0, 15), hero_banner)
         
         # Draw Header info
         res_text = stats.get("result_text", "МАТЧ")
@@ -176,30 +176,30 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
         
         res_color = (76, 175, 80) if "ПОБЕДА" in stats.get("result_text", "") else (244, 67, 54)
         draw.text((315, 20), res_text, fill=res_color, font=font_bold)
-        draw.text((315, 55), stats.get("hero_name", "Герой"), fill=(255, 255, 255), font=font_reg)
+        
+        # Draw MMR in the header line (same line as Victory/Loss)
+        mmr_val = stats.get("new_mmr")
+        mmr_diff = stats.get("mmr_diff")
+        if mmr_val:
+            mmr_str = f"MMR: {mmr_val}"
+            if mmr_diff:
+                mmr_str += f" ({'+' if mmr_diff > 0 else ''}{mmr_diff})"
+            draw.text((480, 20), mmr_str, fill=(255, 255, 255), font=font_reg)
+
+        draw.text((315, 50), stats.get("hero_name", "Герой"), fill=(200, 200, 210), font=font_reg)
         
         # Draw Main Stats Dashboard
-        stats_y = 105
+        stats_y = 90
         stats_x = 315
         def draw_stat(x, y, label, value, color=(255, 255, 255)):
             draw.text((x, y), label, fill=(150, 150, 160), font=font_tiny)
             draw.text((x, y + 15), str(value), fill=color, font=font_reg)
 
         draw_stat(stats_x, stats_y, "KDA", f"{stats.get('kills')}/{stats.get('deaths')}/{stats.get('assists')}")
-        draw_stat(stats_x + 85, stats_y, "GPM/XPM", f"{stats.get('gpm')}/{stats.get('xpm')}")
-        draw_stat(stats_x + 185, stats_y, "NW 10:00", f"{stats.get('nw_10', 0):,}".replace(",", " "))
-        draw_stat(stats_x + 300, stats_y, "NET WORTH", f"{stats.get('net_worth', 0):,}".replace(",", " "))
-        
-        # Add MMR to the stats row
-        mmr_val = stats.get("new_mmr")
-        mmr_diff = stats.get("mmr_diff")
-        if mmr_val:
-            mmr_str = f"{mmr_val}"
-            if mmr_diff:
-                mmr_str += f" ({'+' if mmr_diff > 0 else ''}{mmr_diff})"
-            draw_stat(stats_x + 420, stats_y, "MMR", mmr_str, color=(255, 255, 255))
-
-        draw_stat(stats_x + 540, stats_y, "DURATION", stats.get("duration", "00:00"))
+        draw_stat(stats_x + 100, stats_y, "GPM/XPM", f"{stats.get('gpm')}/{stats.get('xpm')}")
+        draw_stat(stats_x + 230, stats_y, "NW 10:00", f"{stats.get('nw_10', 0):,}".replace(",", " "))
+        draw_stat(stats_x + 360, stats_y, "NET WORTH", f"{stats.get('net_worth', 0):,}".replace(",", " "))
+        draw_stat(stats_x + 500, stats_y, "DURATION", stats.get("duration", "00:00"))
 
         # Draw Rank
         if rank_img:
@@ -208,12 +208,12 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
             rank_img = rank_img.resize((r_w, r_h), Image.Resampling.LANCZOS)
             # Move Rank Icon higher and to the right
             canvas.paste(rank_img, (W - 100, 15), rank_img)
-            draw.text((W - 100, 95), stats.get("rank_name", ""), fill=(200, 200, 210), font=font_sm)
+            draw.text((W - 100, 85), stats.get("rank_name", ""), fill=(200, 200, 210), font=font_sm)
 
         # Draw Items with Timings
-        draw.text((315, 175), "ПРЕДМЕТЫ И ТАЙМИНГИ", fill=(100, 100, 110), font=font_tiny)
+        draw.text((315, 155), "ПРЕДМЕТЫ И ТАЙМИНГИ", fill=(100, 100, 110), font=font_tiny)
         item_x = 315
-        item_y = 200
+        item_y = 180
         icon_w, icon_h = 60, 45
         
         # Sort items by timing for the timeline
