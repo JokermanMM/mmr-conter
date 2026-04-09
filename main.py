@@ -196,10 +196,10 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
             draw.text((x, y + 15), str(value), fill=color, font=font_reg)
 
         draw_stat(stats_x, stats_y, "KDA", f"{stats.get('kills')}/{stats.get('deaths')}/{stats.get('assists')}")
-        draw_stat(stats_x + 100, stats_y, "GPM/XPM", f"{stats.get('gpm')}/{stats.get('xpm')}")
-        draw_stat(stats_x + 230, stats_y, "NW 10:00", f"{stats.get('nw_10', 0):,}".replace(",", " "))
-        draw_stat(stats_x + 360, stats_y, "NET WORTH", f"{stats.get('net_worth', 0):,}".replace(",", " "))
-        draw_stat(stats_x + 500, stats_y, "DURATION", stats.get("duration", "00:00"))
+        draw_stat(stats_x + 90, stats_y, "GPM/XPM", f"{stats.get('gpm')}/{stats.get('xpm')}")
+        draw_stat(stats_x + 195, stats_y, "NW 10:00", f"{stats.get('nw_10', 0):,}".replace(",", " "))
+        draw_stat(stats_x + 300, stats_y, "NET WORTH", f"{stats.get('net_worth', 0):,}".replace(",", " "))
+        draw_stat(stats_x + 415, stats_y, "DURATION", stats.get("duration", "00:00"))
 
         # Draw Rank
         if rank_img:
@@ -217,10 +217,11 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
         icon_w, icon_h = 60, 45
         
         # Sort items by timing for the timeline
-        # First, show current inventory (the 6 icons), but if we have timing data, let's use it.
-        # However, following the user's request, let's show items next to timing.
+        items_data = list(zip(items_imgs, item_timings))
+        # Sort by timing (items with None timing go to the end)
+        items_data.sort(key=lambda x: x[1] if x[1] is not None else float('inf'))
         
-        for i, item_icon in enumerate(items_imgs):
+        for i, (item_icon, t) in enumerate(items_data):
             # Draw Slot Frame
             draw.rectangle([item_x + i*75, item_y, item_x + i*75 + icon_w, item_y + icon_h], outline=(40, 40, 45), width=1)
             if item_icon:
@@ -228,7 +229,6 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
                 canvas.paste(item_icon, (item_x + i*75, item_y), item_icon)
                 
             # Draw purchase time
-            t = item_timings[i] if i < len(item_timings) else None
             if t is not None:
                 t_str = format_duration(t)
                 # Center time under icon
