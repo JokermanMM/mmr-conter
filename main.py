@@ -105,7 +105,11 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
         font_reg, font_sm, font_tiny = font_bold, font_bold, font_bold
 
     try:
-        async with aiohttp.ClientSession() as session:
+        # Headers to bypass Cloudflare/bot detection
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        async with aiohttp.ClientSession(headers=headers) as session:
             # 1. Background/Hero Banner
             hero_banner = None
             if hero_short_name:
@@ -171,7 +175,10 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
         
         # Draw Header info
         res_text = stats.get("result_text", "МАТЧ")
-        res_color = (76, 175, 80) if "ПОБЕДА" in res_text else (244, 67, 54)
+        # Remove emojis from image text to avoid square boxes on server fonts
+        res_text = res_text.replace("✨", "").replace("💀", "").strip()
+        
+        res_color = (76, 175, 80) if "ПОБЕДА" in stats.get("result_text", "") else (244, 67, 54)
         draw.text((320, 30), res_text, fill=res_color, font=font_bold)
         draw.text((320, 70), stats.get("hero_name", "Герой"), fill=(255, 255, 255), font=font_reg)
         
@@ -476,7 +483,32 @@ async def test_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"\n🔗 [Dotabuff](https://www.dotabuff.com/matches/{match_id})"
     )
     
-    mock_items = ["https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/blink.png"] + [None]*5
+    mock_items = [
+        "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/blink.png",
+        "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/black_king_bar.png",
+        "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/power_treads.png",
+        "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/echo_sabre.png",
+        "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/heavens_halberd.png",
+        "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/ultimate_scepter.png"
+    ]
+    mock_neutral = "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/philosophers_stone.png"
+    
+    item_purchases = [
+        {"itemId": 1, "time": 740}, # Blink
+        {"itemId": 2, "time": 1250}, # BKB
+        {"itemId": 3, "time": 450}, # Treads
+        {"itemId": 4, "time": 900}, # Echo
+        {"itemId": 5, "time": 1800}, # Halberd
+        {"itemId": 6, "time": 2100}  # Scepter
+    ]
+    
+    mock_abilities = [
+        {"abilityId": 597, "level": 10, "isTalent": True},
+        {"abilityId": 598, "level": 15, "isTalent": True},
+        {"abilityId": 599, "level": 20, "isTalent": True},
+        {"abilityId": 600, "level": 25, "isTalent": True}
+    ]
+    
     abilities_dict = await dota.get_abilities_dict()
     
     try:
@@ -484,10 +516,10 @@ async def test_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             hero_short_name="spirit_breaker", 
             rank_icon_id=rank_icon_id, 
             items_urls=mock_items, 
-            neutral_url=None,
-            stats={**stats, "item_ids": [1, 0, 0, 0, 0, 0]}, # Mock item ID 1 for Blink
-            item_purchases=[{"itemId": 1, "time": 740}], # 12:20
-            abilities=[{"abilityId": 597, "level": 10, "isTalent": True}],
+            neutral_url=mock_neutral,
+            stats={**stats, "item_ids": [1, 2, 3, 4, 5, 6]},
+            item_purchases=item_purchases,
+            abilities=mock_abilities,
             ability_cache=abilities_dict
         )
         if composite_io:
