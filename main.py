@@ -85,7 +85,7 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
     if not HAS_PILLOW:
         return None
 
-    W, H = 900, 500
+    W, H = 900, 380
     canvas = Image.new("RGBA", (W, H), (15, 15, 18, 255))
     draw = ImageDraw.Draw(canvas)
     
@@ -163,17 +163,13 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
         
         # Draw Hero Portrait (Left Panel)
         if hero_banner:
-            # Scale portrait to fit width of left panel (~300px)
-            # Standard portrait is 256x144.
             target_w = 300
             target_h = int(hero_banner.height * (target_w / hero_banner.width))
             hero_banner = hero_banner.resize((target_w, target_h), Image.Resampling.LANCZOS)
             
-            # Paste in the middle vertically
-            y_offset = (H - target_h) // 2
-            canvas.paste(hero_banner, (0, y_offset), hero_banner)
+            # Move higher: y_offset = 20 instead of centering
+            canvas.paste(hero_banner, (0, 20), hero_banner)
             
-            # Overlay a shadow/gradient to the right
             shade = Image.new("RGBA", (100, H), (0, 0, 0, 0))
             for x in range(100):
                 alpha = int(255 * (x / 100))
@@ -183,16 +179,15 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
         
         # Draw Header info
         res_text = stats.get("result_text", "МАТЧ")
-        # Remove emojis from image text to avoid square boxes on server fonts
         res_text = res_text.replace("✨", "").replace("💀", "").strip()
         
         res_color = (76, 175, 80) if "ПОБЕДА" in stats.get("result_text", "") else (244, 67, 54)
-        draw.text((320, 30), res_text, fill=res_color, font=font_bold)
-        draw.text((320, 70), stats.get("hero_name", "Герой"), fill=(255, 255, 255), font=font_reg)
+        draw.text((315, 20), res_text, fill=res_color, font=font_bold)
+        draw.text((315, 55), stats.get("hero_name", "Герой"), fill=(255, 255, 255), font=font_reg)
         
         # Draw Main Stats Dashboard
-        stats_y = 120
-        stats_x = 320
+        stats_y = 105
+        stats_x = 315
         def draw_stat(x, y, label, value, color=(255, 255, 255)):
             draw.text((x, y), label, fill=(150, 150, 160), font=font_tiny)
             draw.text((x, y + 15), str(value), fill=color, font=font_reg)
@@ -201,20 +196,21 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
         draw_stat(stats_x + 85, stats_y, "GPM/XPM", f"{stats.get('gpm')}/{stats.get('xpm')}")
         draw_stat(stats_x + 185, stats_y, "NW 10:00", f"{stats.get('nw_10', 0):,}".replace(",", " "))
         draw_stat(stats_x + 300, stats_y, "NET WORTH", f"{stats.get('net_worth', 0):,}".replace(",", " "))
-        draw_stat(stats_x + 420, stats_y, "DURATION", stats.get("duration", "00:00"))
+        draw_stat(stats_x + 410, stats_y, "DURATION", stats.get("duration", "00:00"))
 
         # Draw Rank
         if rank_img:
-            r_w = 100
+            r_w = 90
             r_h = int(rank_img.height * (r_w / rank_img.width))
             rank_img = rank_img.resize((r_w, r_h), Image.Resampling.LANCZOS)
-            canvas.paste(rank_img, (W - 130, 20), rank_img)
-            draw.text((W - 130, 110), stats.get("rank_name", ""), fill=(200, 200, 210), font=font_sm)
+            # Move Rank Icon higher and to the right
+            canvas.paste(rank_img, (W - 110, 15), rank_img)
+            draw.text((W - 110, 95), stats.get("rank_name", ""), fill=(200, 200, 210), font=font_sm)
 
         # Draw Items with Timings
-        draw.text((320, 200), "ПРЕДМЕТЫ И ТАЙМИНГИ", fill=(100, 100, 110), font=font_tiny)
-        item_x = 320
-        item_y = 225
+        draw.text((315, 175), "ПРЕДМЕТЫ И ТАЙМИНГИ", fill=(100, 100, 110), font=font_tiny)
+        item_x = 315
+        item_y = 200
         icon_w, icon_h = 60, 45
         
         # Sort items by timing for the timeline
@@ -247,13 +243,14 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
         mmr_val = stats.get("new_mmr")
         mmr_diff = stats.get("mmr_diff")
         if mmr_val:
-            draw.text((320, H - 60), "MMR", fill=(150, 150, 160), font=font_tiny)
+            mmr_y = 310
+            draw.text((315, mmr_y), "MMR", fill=(150, 150, 160), font=font_tiny)
             mmr_str = f"{mmr_val}"
-            draw.text((320, H - 45), mmr_str, fill=(255, 255, 255), font=font_bold)
+            draw.text((315, mmr_y + 15), mmr_str, fill=(255, 255, 255), font=font_bold)
             if mmr_diff:
                 diff_str = f"({'+' if mmr_diff > 0 else ''}{mmr_diff})"
                 diff_col = (76, 175, 80) if mmr_diff > 0 else (244, 67, 54)
-                draw.text((320 + 80, H - 45), diff_str, fill=diff_col, font=font_reg)
+                draw.text((315 + 85, mmr_y + 15), diff_str, fill=diff_col, font=font_reg)
 
         output = io.BytesIO()
         canvas.save(output, format="PNG")
