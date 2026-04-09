@@ -163,12 +163,17 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
         
         # Draw Hero Portrait (Left Panel)
         if hero_banner:
-            target_w = 300
-            target_h = int(hero_banner.height * (target_w / hero_banner.width))
+            # Target box is approx 280x250. Scale keeping aspect ratio, then crop center
+            target_h = 250
+            target_w = int(hero_banner.width * (target_h / hero_banner.height))
             hero_banner = hero_banner.resize((target_w, target_h), Image.Resampling.LANCZOS)
             
-            # Move higher: y_offset = 15 instead of centering
-            canvas.paste(hero_banner, (0, 15), hero_banner)
+            # Crop to 280 width (centered)
+            left = (target_w - 280) // 2
+            hero_banner = hero_banner.crop((left, 0, left + 280, target_h))
+            
+            # Paste symmetrically at 10, 15
+            canvas.paste(hero_banner, (10, 15), hero_banner)
         
         # Draw Header info
         res_text = stats.get("result_text", "МАТЧ")
@@ -177,15 +182,6 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
         res_color = (76, 175, 80) if "ПОБЕДА" in stats.get("result_text", "") else (244, 67, 54)
         draw.text((315, 20), res_text, fill=res_color, font=font_bold)
         
-        # Draw MMR in the header line (same line as Victory/Loss)
-        mmr_val = stats.get("new_mmr")
-        mmr_diff = stats.get("mmr_diff")
-        if mmr_val:
-            mmr_str = f"MMR: {mmr_val}"
-            if mmr_diff:
-                mmr_str += f" ({'+' if mmr_diff > 0 else ''}{mmr_diff})"
-            draw.text((480, 20), mmr_str, fill=(255, 255, 255), font=font_reg)
-
         draw.text((315, 50), stats.get("hero_name", "Герой"), fill=(200, 200, 210), font=font_reg)
         
         # Draw Main Stats Dashboard
@@ -206,9 +202,18 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
             r_w = 90
             r_h = int(rank_img.height * (r_w / rank_img.width))
             rank_img = rank_img.resize((r_w, r_h), Image.Resampling.LANCZOS)
-            # Move Rank Icon higher and to the right
-            canvas.paste(rank_img, (W - 100, 15), rank_img)
-            draw.text((W - 100, 85), stats.get("rank_name", ""), fill=(200, 200, 210), font=font_sm)
+            canvas.paste(rank_img, (W - 120, 15), rank_img)
+            draw.text((W - 120, 85), stats.get("rank_name", ""), fill=(200, 200, 210), font=font_sm)
+
+        # Draw MMR under Rank
+        mmr_val = stats.get("new_mmr")
+        mmr_diff = stats.get("mmr_diff")
+        if mmr_val:
+            draw.text((W - 120, 110), f"{mmr_val}", fill=(255, 255, 255), font=font_bold)
+            if mmr_diff:
+                diff_str = f"({'+' if mmr_diff > 0 else ''}{mmr_diff})"
+                diff_col = (76, 175, 80) if mmr_diff > 0 else (244, 67, 54)
+                draw.text((W - 120 + 75, 115), diff_str, fill=diff_col, font=font_reg)
 
         # Draw Items with Timings
         draw.text((315, 155), "ПРЕДМЕТЫ И ТАЙМИНГИ", fill=(100, 100, 110), font=font_tiny)
