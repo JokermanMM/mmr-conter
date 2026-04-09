@@ -566,7 +566,7 @@ async def lastgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         items_urls = pm.get("items_urls", [])
         neutral_url = pm.get("neutral_url")
         
-        hero_short_name = pm.get("hero_short_name")
+        hero_short_name = pm.get("hero_short_name") or hero_info.get("short")
         item_purchases = pm.get("item_purchases", [])
         abilities_data = pm.get("abilities", [])
         ability_cache = await dota.get_abilities_dict()
@@ -917,7 +917,7 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                 neutral_url = pm.get("neutral_url")
                 
                 # New fields for premium card
-                hero_short_name = pm.get("hero_short_name")
+                hero_short_name = pm.get("hero_short_name") or hero_info.get("short")
                 item_purchases = pm.get("item_purchases", [])
                 abilities_data = pm.get("abilities", [])
                 ability_cache = await dota.get_abilities_dict()
