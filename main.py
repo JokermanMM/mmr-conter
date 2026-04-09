@@ -3,8 +3,8 @@ import asyncio
 import os
 import logging
 from datetime import time, datetime, timezone, timedelta
-from telegram import Update, InputMediaPhoto, BotCommand, BotCommandScopeChat, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
+from telegram import Update, InputMediaPhoto, BotCommand, BotCommandScopeChat, InlineKeyboardButton, InlineKeyboardMarkup, ForceReply
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler, MessageHandler, filters
 from dota_client import DotaClient
 from data_manager import DataManager
 from dotenv import load_dotenv
@@ -80,7 +80,7 @@ def get_main_keyboard():
         ],
         [
             InlineKeyboardButton("📊 График MMR", callback_data="graph"),
-            InlineKeyboardButton("🎯 MMR", switch_inline_query_current_chat="/set_mmr ")
+            InlineKeyboardButton("🎯 MMR", callback_data="set_mmr")
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -98,6 +98,34 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status_command(update, context)
     elif cmd == "graph":
         await graph_command(update, context)
+    elif cmd == "set_mmr":
+        await update.effective_message.reply_text(
+            "🎯 **Введите ваш текущий MMR:**\n(просто число, например 1984)",
+            reply_markup=ForceReply(selective=True)
+        )
+
+async def mmr_reply_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles direct MMR number replies."""
+    # Only handle replies to the specific prompt
+    if not update.message or not update.message.reply_to_message:
+        return
+    
+    if "Введите ваш текущий MMR" not in update.message.reply_to_message.text:
+        return
+        
+    chat_id = update.effective_chat.id
+    text = update.message.text.strip()
+    
+    try:
+        mmr = int(text)
+        db.set_manual_mmr(chat_id, mmr)
+        await update.message.reply_text(
+            f"✅ MMR успешно обновлен: `{mmr}`!",
+            parse_mode="Markdown",
+            reply_markup=get_main_keyboard()
+        )
+    except ValueError:
+        await update.message.reply_text("❌ Пожалуйста, введи только число. Пример: `1984`", parse_mode="Markdown")
 
 
 def get_rank_info(mmr):
@@ -1262,6 +1290,7 @@ async def main():
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("graph", graph_command))
     application.add_handler(CallbackQueryHandler(callback_handler))
+    application.add_handler(MessageHandler(filters.REPLY & filters.TEXT, mmr_reply_handler))
     
     # Job queue
     job_queue = application.job_queue
