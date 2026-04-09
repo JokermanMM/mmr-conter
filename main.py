@@ -175,20 +175,24 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
             # Paste symmetrically at 10, 15
             canvas.paste(hero_banner, (10, 15), hero_banner)
         
-        # Draw Rank next to header text
-        if rank_img:
-            r_w = 45
-            r_h = int(rank_img.height * (r_w / rank_img.width))
-            rank_img = rank_img.resize((r_w, r_h), Image.Resampling.LANCZOS)
-            canvas.paste(rank_img, (530, 8), rank_img)
-            draw.text((585, 23), stats.get("rank_name", ""), fill=(200, 200, 210), font=font_reg)
-
         # Draw Header info
         res_text = stats.get("result_text", "МАТЧ")
         res_text = res_text.replace("✨", "").replace("💀", "").strip()
         
         res_color = (76, 175, 80) if "ПОБЕДА" in stats.get("result_text", "") else (244, 67, 54)
         draw.text((315, 20), res_text, fill=res_color, font=font_bold)
+        
+        # Draw Rank dynamically next to header text
+        if rank_img:
+            try:
+                res_w = int(draw.textlength(res_text, font=font_bold))
+            except AttributeError:
+                res_w = len(res_text) * 20
+                
+            r_w = 55
+            r_h = int(rank_img.height * (r_w / rank_img.width))
+            rank_img = rank_img.resize((r_w, r_h), Image.Resampling.LANCZOS)
+            canvas.paste(rank_img, (315 + res_w + 10, 5), rank_img)
         
         draw.text((315, 50), stats.get("hero_name", "Герой"), fill=(200, 200, 210), font=font_reg)
         
@@ -210,9 +214,17 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
         if mmr_val:
             draw_stat(stats_x + 395, stats_y, "MMR", str(mmr_val))
             if mmr_diff:
-                diff_str = f" ({'+' if mmr_diff > 0 else ''}{mmr_diff})"
+                diff_str = f"({'+' if mmr_diff > 0 else ''}{mmr_diff})"
                 diff_col = (76, 175, 80) if mmr_diff > 0 else (244, 67, 54)
-                draw.text((stats_x + 395 + 42, stats_y + 15), diff_str, fill=diff_col, font=font_reg)
+                
+                # Measure text width to add a proper gap before the diff
+                try:
+                    mmr_val_w = int(draw.textlength(str(mmr_val), font=font_reg))
+                except AttributeError:
+                    mmr_val_w = len(str(mmr_val)) * 11
+                
+                # 6 pixels is a nice small space
+                draw.text((stats_x + 395 + mmr_val_w + 6, stats_y + 15), diff_str, fill=diff_col, font=font_reg)
 
         draw_stat(stats_x + 510, stats_y, "DURATION", stats.get("duration", "00:00"))
 
