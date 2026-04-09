@@ -189,10 +189,10 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
             except AttributeError:
                 res_w = len(res_text) * 20
                 
-            r_w = 55
+            r_w = 42
             r_h = int(rank_img.height * (r_w / rank_img.width))
             rank_img = rank_img.resize((r_w, r_h), Image.Resampling.LANCZOS)
-            canvas.paste(rank_img, (315 + res_w + 10, 5), rank_img)
+            canvas.paste(rank_img, (315 + res_w + 12, 14), rank_img)
         
         draw.text((315, 50), stats.get("hero_name", "Герой"), fill=(200, 200, 210), font=font_reg)
         
@@ -208,11 +208,13 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
         draw_stat(stats_x + 195, stats_y, "NW 10:00", f"{stats.get('nw_10', 0):,}".replace(",", " "))
         draw_stat(stats_x + 285, stats_y, "NET WORTH", f"{stats.get('net_worth', 0):,}".replace(",", " "))
         
-        # Add MMR back to the stats row
+        draw_stat(stats_x + 395, stats_y, "DURATION", stats.get("duration", "00:00"))
+
+        # Add MMR to the end of the stats row
         mmr_val = stats.get("new_mmr")
         mmr_diff = stats.get("mmr_diff")
         if mmr_val:
-            draw_stat(stats_x + 395, stats_y, "MMR", str(mmr_val))
+            draw_stat(stats_x + 485, stats_y, "MMR", str(mmr_val))
             if mmr_diff:
                 diff_str = f"({'+' if mmr_diff > 0 else ''}{mmr_diff})"
                 diff_col = (76, 175, 80) if mmr_diff > 0 else (244, 67, 54)
@@ -224,9 +226,7 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
                     mmr_val_w = len(str(mmr_val)) * 11
                 
                 # 6 pixels is a nice small space
-                draw.text((stats_x + 395 + mmr_val_w + 6, stats_y + 15), diff_str, fill=diff_col, font=font_reg)
-
-        draw_stat(stats_x + 510, stats_y, "DURATION", stats.get("duration", "00:00"))
+                draw.text((stats_x + 485 + mmr_val_w + 6, stats_y + 15), diff_str, fill=diff_col, font=font_reg)
 
         # Draw Items with Timings
         draw.text((315, 155), "ПРЕДМЕТЫ И ТАЙМИНГИ", fill=(100, 100, 110), font=font_tiny)
