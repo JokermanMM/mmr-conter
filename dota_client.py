@@ -14,13 +14,19 @@ class DotaClient:
             "Accept": "application/json"
         }
         self.stratz_token = stratz_token
-        if stratz_token:
-            self.stratz_headers = {
-                "Authorization": f"Bearer {stratz_token}",
-                "Content-Type": "application/json",
-                "User-Agent": "Dota2MMRBot/1.0",
-                "Accept": "application/json"
-            }
+        # Enhanced Headers to attempt Stratz Cloudflare bypass
+        self.stratz_headers = {
+            "Authorization": f"Bearer {self.stratz_token}",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+            "Accept": "application/json",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Content-Type": "application/json",
+            "Origin": "https://stratz.com",
+            "Referer": "https://stratz.com/",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-site"
+        }
         
         self.hero_cache = {}
         self.item_id_map = {}
@@ -322,7 +328,11 @@ class DotaClient:
                 except Exception as e:
                     logger.error(f"OpenDota match details error: {e}")
                 
-                return {
+                # Request a parse if we don't have detailed data yet
+                if not net_worth:
+                    try:
+                        await client.post(f"{self.OPENDOTA_URL}/request/{match_id}", headers=self.headers, timeout=5.0)
+                    except: pass
                     "player_name": player_name,
                     "match": {
                         "id": str(match_id),
