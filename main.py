@@ -432,10 +432,13 @@ async def test_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🔒 Эта команда доступна только администратору бота.")
         return
     
-    # Example mock data
+    # Get hero_id from args if provided, else default to 71 (Spirit Breaker)
+    hero_id = 71
+    if context.args and context.args[0].isdigit():
+        hero_id = int(context.args[0])
+    
     is_win = True
     result_emoji = "✨ ПОБЕДА ✨"
-    hero_id = 71  # Spirit Breaker
     kills, deaths, assists = 12, 2, 8
     gpm, xpm = 750, 820
     match_id = 7123456789
@@ -508,7 +511,7 @@ async def test_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         composite_io = await generate_composite_image(
-            hero_short_name="spirit_breaker", 
+            hero_short_name=hero_info.get("short"), 
             rank_icon_id=rank_icon_id, 
             items_urls=mock_items, 
             neutral_url=mock_neutral,
