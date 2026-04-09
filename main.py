@@ -169,13 +169,6 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
             
             # Move higher: y_offset = 20 instead of centering
             canvas.paste(hero_banner, (0, 20), hero_banner)
-            
-            shade = Image.new("RGBA", (100, H), (0, 0, 0, 0))
-            for x in range(100):
-                alpha = int(255 * (x / 100))
-                for y in range(H):
-                    shade.putpixel((x, y), (15, 15, 18, alpha))
-            canvas.paste(shade, (target_w - 100, 0), shade)
         
         # Draw Header info
         res_text = stats.get("result_text", "МАТЧ")
@@ -196,7 +189,17 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
         draw_stat(stats_x + 85, stats_y, "GPM/XPM", f"{stats.get('gpm')}/{stats.get('xpm')}")
         draw_stat(stats_x + 185, stats_y, "NW 10:00", f"{stats.get('nw_10', 0):,}".replace(",", " "))
         draw_stat(stats_x + 300, stats_y, "NET WORTH", f"{stats.get('net_worth', 0):,}".replace(",", " "))
-        draw_stat(stats_x + 410, stats_y, "DURATION", stats.get("duration", "00:00"))
+        
+        # Add MMR to the stats row
+        mmr_val = stats.get("new_mmr")
+        mmr_diff = stats.get("mmr_diff")
+        if mmr_val:
+            mmr_str = f"{mmr_val}"
+            if mmr_diff:
+                mmr_str += f" ({'+' if mmr_diff > 0 else ''}{mmr_diff})"
+            draw_stat(stats_x + 420, stats_y, "MMR", mmr_str, color=(255, 255, 255))
+
+        draw_stat(stats_x + 540, stats_y, "DURATION", stats.get("duration", "00:00"))
 
         # Draw Rank
         if rank_img:
@@ -204,8 +207,8 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
             r_h = int(rank_img.height * (r_w / rank_img.width))
             rank_img = rank_img.resize((r_w, r_h), Image.Resampling.LANCZOS)
             # Move Rank Icon higher and to the right
-            canvas.paste(rank_img, (W - 110, 15), rank_img)
-            draw.text((W - 110, 95), stats.get("rank_name", ""), fill=(200, 200, 210), font=font_sm)
+            canvas.paste(rank_img, (W - 100, 15), rank_img)
+            draw.text((W - 100, 95), stats.get("rank_name", ""), fill=(200, 200, 210), font=font_sm)
 
         # Draw Items with Timings
         draw.text((315, 175), "ПРЕДМЕТЫ И ТАЙМИНГИ", fill=(100, 100, 110), font=font_tiny)
@@ -239,18 +242,7 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
             draw.ellipse([item_x + 6*75, item_y, item_x + 6*75 + ni_w, item_y + ni_h], fill=(30, 30, 35))
             canvas.paste(neutral_img, (item_x + 6*75, item_y), neutral_img)
 
-        # Draw MMR Change
-        mmr_val = stats.get("new_mmr")
-        mmr_diff = stats.get("mmr_diff")
-        if mmr_val:
-            mmr_y = 310
-            draw.text((315, mmr_y), "MMR", fill=(150, 150, 160), font=font_tiny)
-            mmr_str = f"{mmr_val}"
-            draw.text((315, mmr_y + 15), mmr_str, fill=(255, 255, 255), font=font_bold)
-            if mmr_diff:
-                diff_str = f"({'+' if mmr_diff > 0 else ''}{mmr_diff})"
-                diff_col = (76, 175, 80) if mmr_diff > 0 else (244, 67, 54)
-                draw.text((315 + 85, mmr_y + 15), diff_str, fill=diff_col, font=font_reg)
+        # Removed old MMR drawing block as it is now in the stats row
 
         output = io.BytesIO()
         canvas.save(output, format="PNG")
