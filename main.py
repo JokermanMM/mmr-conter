@@ -113,11 +113,10 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
             # 1. Background/Hero Banner
             hero_banner = None
             if hero_short_name:
-                # Try multiple URL patterns for vertical banners
+                # Try Steam Renders (more stable than Stratz for bots)
                 possible_urls = [
-                    f"https://cdn.stratz.com/images/dota2/heroes/vert/{hero_short_name}.png",
-                    f"https://cdn.stratz.com/images/dota2/heroes/{hero_short_name}_vert.png",
-                    f"https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/{hero_short_name}_vert.png"
+                    f"https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/renders/{hero_short_name}.png",
+                    f"https://cdn.stratz.com/images/dota2/heroes/vert/{hero_short_name}.png"
                 ]
                 
                 for banner_url in possible_urls:
@@ -127,12 +126,8 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
                                 hero_banner = Image.open(io.BytesIO(await resp.read())).convert("RGBA")
                                 logger.info(f"Successfully loaded hero banner from {banner_url}")
                                 break
-                            else:
-                                logger.warning(f"Failed to load banner from {banner_url}: Status {resp.status}")
                     except Exception as e:
-                        logger.error(f"Error loading banner from {banner_url}: {e}")
-            else:
-                logger.warning("No hero_short_name provided for banner")
+                        logger.error(f"Error loading banner: {e}")
             
             # 2. Rank Icon
             rank_img = None
@@ -207,7 +202,7 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
 
         draw_stat(stats_x, stats_y, "KDA", f"{stats.get('kills')}/{stats.get('deaths')}/{stats.get('assists')}")
         draw_stat(stats_x + 85, stats_y, "GPM/XPM", f"{stats.get('gpm')}/{stats.get('xpm')}")
-        draw_stat(stats_x + 185, stats_y, "NW 10:00", f"{stats.get('nw_10', 0):,}".replace(",", " "), color=(255, 215, 0))
+        draw_stat(stats_x + 185, stats_y, "NW 10:00", f"{stats.get('nw_10', 0):,}".replace(",", " "))
         draw_stat(stats_x + 300, stats_y, "NET WORTH", f"{stats.get('net_worth', 0):,}".replace(",", " "))
         draw_stat(stats_x + 420, stats_y, "DURATION", stats.get("duration", "00:00"))
 
@@ -258,25 +253,45 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
             # This requires knowing which item is in which slot, but here we just show labels.
             pass
 
-        # Draw Talents
-        draw.text((320, 310), "ВЫБРАННЫЕ ТАЛАНТЫ", fill=(100, 100, 110), font=font_tiny)
-        talent_y = 335
-        if abilities and ability_cache:
-            talents = [a for a in abilities if a.get("isTalent")]
-            talents = sorted(talents, key=lambda x: x.get("level", 0))
+        # Draw Talents Tree Icon (Graphical)
+        talent_icon_y = 310
+        draw.text((320, talent_icon_y), "ТАЛАНТЫ", fill=(100, 100, 110), font=font_tiny)
+        
+        tree_x, tree_y = 320, 335
+        tree_size = 80
+        # Draw background circle
+        draw.ellipse([tree_x, tree_y, tree_x + tree_size, tree_y + tree_size], outline=(60, 60, 65), width=2)
+        
+        # Draw 8 dots in semi-circle below
+        dot_radius = 4
+        center_x, center_y = tree_x + tree_size // 2, tree_y + tree_size // 2
+        
+        if abilities:
+            # We track which levels were picked. 
+            # level_map = {10: "left" or "right"}
+            # This logic is simplified to showing 4 dots for picked levels.
+            picked_levels = sorted(list(set([a.get("level") for a in abilities if a.get("isTalent")])))
             
-            for i, tal in enumerate(talents):
-                tid = tal.get("abilityId")
-                t_info = ability_cache.get(tid, {})
-                t_name = t_info.get("displayName", f"Талант {tal.get('level')}")
+            # semi-circle angles for dots
+            angles = [120, 135, 150, 165, 15, 30, 45, 60] # Simplified logic for 8 dots
+            for i in range(8):
+                # Calculate dot position on the circle edge
+                import math
+                angle_rad = math.radians(180 - (210 - i*20)) # semi-circle logic
+                dx = (tree_size // 2 + 10) * math.cos(angle_rad)
+                dy = (tree_size // 2 + 10) * math.sin(angle_rad)
                 
-                # Draw level circle
-                circle_r = 12
-                draw.ellipse([320, talent_y + i*35, 320 + circle_r*2, talent_y + i*35 + circle_r*2], fill=(45, 45, 55))
-                draw.text((320 + 7, talent_y + i*35 + 4), str(tal.get("level")), fill=(255, 215, 0), font=font_tiny)
-                
-                # Draw talent text
-                draw.text((355, talent_y + i*35 + 4), t_name, fill=(200, 200, 210), font=font_sm)
+                # Highlight if level i//2 + 1 (simplified) is in picked_levels
+                # Or based on some logic. For /test, we light up 4 dots.
+                is_active = (i % 2 == 0) and ( (10 + (i//2)*5) in picked_levels )
+                dot_color = (255, 180, 0) if is_active else (60, 60, 65)
+                draw.ellipse([center_x + dx - dot_radius, center_y + dy - dot_radius, 
+                             center_x + dx + dot_radius, center_y + dy + dot_radius], fill=dot_color)
+            
+            # Draw a simple 'tree' branch icon in the center if possible
+            draw.line([center_x, center_y + 15, center_x, center_y - 15], fill=(100, 100, 110), width=3)
+            draw.line([center_x, center_y - 5, center_x + 10, center_y - 15], fill=(100, 100, 110), width=2)
+            draw.line([center_x, center_y - 5, center_x - 10, center_y - 15], fill=(100, 100, 110), width=2)
 
         # Draw MMR Change
         mmr_val = stats.get("new_mmr")
