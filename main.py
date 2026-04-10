@@ -1302,9 +1302,9 @@ async def main():
     # Start web server
     await start_web_server()
     
-    # Start bot with increased timeouts to prevent VPS network issues
+    # Maximize timeouts for slow VPS network (especially for sending photos)
     from telegram.request import HTTPXRequest
-    request = HTTPXRequest(connect_timeout=20, read_timeout=20)
+    request = HTTPXRequest(connect_timeout=30, read_timeout=30, write_timeout=60, pool_timeout=30)
     
     application = ApplicationBuilder().token(BOT_TOKEN).request(request).build()
     
