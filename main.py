@@ -1302,9 +1302,16 @@ async def main():
     # Start web server
     await start_web_server()
     
-    # Start bot with increased timeouts to prevent VPS network issues
+    # Config for proxy
+    proxy_url = os.environ.get("PROXY_URL")
+    
+    # Start bot with increased timeouts and optional proxy
     from telegram.request import HTTPXRequest
-    request = HTTPXRequest(connect_timeout=20, read_timeout=20)
+    request = HTTPXRequest(
+        connect_timeout=20, 
+        read_timeout=20,
+        proxy_url=proxy_url
+    )
     
     application = ApplicationBuilder().token(BOT_TOKEN).request(request).build()
     
