@@ -161,7 +161,7 @@ def get_rank_info(mmr):
     
     return f"{name} {stars}", image_id
 
-async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=None, neutral_url=None, item_purchases=None, abilities=None, ability_cache=None, stats=None):
+async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=None, neutral_url=None, item_purchases=None, abilities=None, ability_cache=None, stats=None, hero_id=None):
     """
     Generates a premium modernized match card.
     Layout: 900x500
@@ -200,7 +200,16 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
         async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
             # 1. Background/Hero Banner (Portraits)
             hero_banner = None
-            if hero_short_name:
+            
+            # Try LOCAL first
+            local_hero_path = f"assets/heroes/{hero_id}.png"
+            if hero_id and os.path.exists(local_hero_path):
+                try:
+                    hero_banner = Image.open(local_hero_path).convert("RGBA")
+                except Exception as e:
+                    logger.error(f"Error loading local hero portrait: {e}")
+            
+            if not hero_banner and hero_short_name:
                 banner_url = f"https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/{hero_short_name}.png"
                 try:
                     async with session.get(banner_url) as resp:
@@ -229,20 +238,30 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
                             purchase_map[iid] = p.get("time")
 
                 for i, url in enumerate(items_urls):
-                    if url:
+                    # Get item ID safely
+                    id_list = stats.get("item_ids", [])
+                    item_id = id_list[i] if i < len(id_list) else None
+                    
+                    item_img = None
+                    # Try LOCAL first
+                    local_item_path = f"assets/items/{item_id}.png"
+                    if item_id and os.path.exists(local_item_path):
+                        try:
+                            item_img = Image.open(local_item_path).convert("RGBA")
+                        except Exception as e:
+                            logger.error(f"Error loading local item {item_id}: {e}")
+                    
+                    # Fallback to download
+                    if not item_img and url:
                         try:
                             async with session.get(url) as r:
-                                items_imgs.append(Image.open(io.BytesIO(await r.read())).convert("RGBA") if r.status == 200 else None)
+                                if r.status == 200:
+                                    item_img = Image.open(io.BytesIO(await r.read())).convert("RGBA")
                         except:
-                            items_imgs.append(None)
-                        
-                        # Get timing safely to avoid IndexError
-                        id_list = stats.get("item_ids", [])
-                        item_id = id_list[i] if i < len(id_list) else None
-                        item_timings.append(purchase_map.get(item_id))
-                    else:
-                        items_imgs.append(None)
-                        item_timings.append(None)
+                            pass
+                    
+                    items_imgs.append(item_img)
+                    item_timings.append(purchase_map.get(item_id))
             
             neutral_img = None
             if neutral_url:
@@ -362,9 +381,6 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
         logger.error(f"Error generating premium match image: {e}")
         import traceback
         logger.error(traceback.format_exc())
-        return None
-    except Exception as e:
-        logger.error(f"Error generating composite image: {e}")
         return None
 
 # Global hero cache for display
@@ -620,7 +636,8 @@ async def test_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             stats={**stats, "item_ids": [1, 2, 3, 4, 5, 6], "nw_10": 4200},
             item_purchases=item_purchases,
             abilities=mock_abilities,
-            ability_cache=abilities_dict
+            ability_cache=abilities_dict,
+            hero_id=hero_id
         )
         if composite_io:
             await context.bot.send_photo(chat_id=chat_id, photo=composite_io, caption=msg, parse_mode="Markdown")
@@ -738,7 +755,8 @@ async def lastgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             item_purchases=item_purchases,
             abilities=abilities_data,
             ability_cache=ability_cache,
-            stats=match_stats
+            stats=match_stats,
+            hero_id=hero_id
         )
         
         await msg_wait.delete()
@@ -1150,9 +1168,10 @@ async def monitor_matches(context: ContextTypes.DEFAULT_TYPE):
                         rank_icon_id=rank_icon_id, 
                         items_urls=items_urls, 
                         neutral_url=neutral_url,
-                        item_purchases=item_purchases,
-                        abilities=abilities_data,
+                        item_purchases=pm.get("item_purchases", []),
+                        abilities=pm.get("abilities", []),
                         ability_cache=ability_cache,
+                        hero_id=hero_id,
                         stats={**match_stats, "item_ids": pm.get("item_ids", [None]*6)}
                     )
                     
@@ -1299,6 +1318,10 @@ async def weekly_summary(context: ContextTypes.DEFAULT_TYPE):
 
 
 async def main():
+    # Ensure asset directories exist
+    os.makedirs("assets/heroes", exist_ok=True)
+    os.makedirs("assets/items", exist_ok=True)
+    
     # Start web server
     await start_web_server()
     

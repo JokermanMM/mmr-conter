@@ -101,6 +101,30 @@ class DotaClient:
                     self.ability_cache[ability["id"]] = ability
         return self.ability_cache
 
+    async def get_all_heroes(self) -> dict:
+        """Fetch all heroes constants from OpenDota."""
+        url = f"{self.OPENDOTA_URL}/constants/heroes"
+        async with httpx.AsyncClient() as client:
+            try:
+                r = await client.get(url, headers=self.headers, timeout=15.0)
+                if r.status_code == 200:
+                    return r.json()
+            except Exception as e:
+                logger.error(f"Error fetching all heroes: {e}")
+        return {}
+
+    async def get_all_items_full(self) -> dict:
+        """Fetch all items constants with full data from OpenDota."""
+        url = f"{self.OPENDOTA_URL}/constants/items"
+        async with httpx.AsyncClient() as client:
+            try:
+                r = await client.get(url, headers=self.headers, timeout=15.0)
+                if r.status_code == 200:
+                    return r.json()
+            except Exception as e:
+                logger.error(f"Error fetching all items: {e}")
+        return {}
+
     async def get_player(self, steam_id: int) -> dict | None:
         """Get player profile info via Stratz."""
         query = """
