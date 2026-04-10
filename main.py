@@ -195,14 +195,15 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
-        async with aiohttp.ClientSession(headers=headers) as session:
+        # Add a total timeout for the whole session
+        timeout = aiohttp.ClientTimeout(total=15)
+        async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
             # 1. Background/Hero Banner (Portraits)
             hero_banner = None
             if hero_short_name:
-                # Use reliable Steam CDN for standard portraits
                 banner_url = f"https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/{hero_short_name}.png"
                 try:
-                    async with session.get(banner_url, timeout=10.0) as resp:
+                    async with session.get(banner_url) as resp:
                         if resp.status == 200:
                             hero_banner = Image.open(io.BytesIO(await resp.read())).convert("RGBA")
                 except Exception as e:
@@ -229,11 +230,15 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
 
                 for i, url in enumerate(items_urls):
                     if url:
-                        async with session.get(url) as r:
-                            items_imgs.append(Image.open(io.BytesIO(await r.read())).convert("RGBA") if r.status == 200 else None)
+                        try:
+                            async with session.get(url) as r:
+                                items_imgs.append(Image.open(io.BytesIO(await r.read())).convert("RGBA") if r.status == 200 else None)
+                        except:
+                            items_imgs.append(None)
                         
-                        # Get timing
-                        item_id = stats.get("item_ids", [None]*6)[i]
+                        # Get timing safely to avoid IndexError
+                        id_list = stats.get("item_ids", [])
+                        item_id = id_list[i] if i < len(id_list) else None
                         item_timings.append(purchase_map.get(item_id))
                     else:
                         items_imgs.append(None)
@@ -526,84 +531,87 @@ async def test_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🔒 Эта команда доступна только администратору бота.")
         return
     
-    # Get hero_id from args if provided, else default to 71 (Spirit Breaker)
-    hero_id = 71
-    if context.args and context.args[0].isdigit():
-        hero_id = int(context.args[0])
-    
-    is_win = True
-    result_emoji = "✨ ПОБЕДА ✨"
-    kills, deaths, assists = 12, 2, 8
-    gpm, xpm = 750, 820
-    match_id = 7123456789
-    
-    hero_info = await get_hero_info(hero_id)
-    hero_name = hero_info["name"]
-    
-    user = db.get_user(chat_id)
-    manual_mmr = (user.get("manual_mmr") or 1500) if user else 1500
-    
-    rank_name, rank_icon_id = get_rank_info(manual_mmr + 25)
-    
-    stats = {
-        "result_text": result_emoji,
-        "hero_name": hero_name,
-        "kills": kills, "deaths": deaths, "assists": assists,
-        "gpm": gpm, "xpm": xpm, "net_worth": 24500,
-        "duration": "38:15",
-        "rank_name": rank_name,
-        "new_mmr": manual_mmr + 25,
-        "mmr_diff": 25
-    }
-    
-    msg = (
-        f"**{result_emoji}** 🪄 (Тест)\n\n"
-        f"👾 **Герой:** {hero_name}\n"
-        f"🩸 **KDA:** `{kills} / {deaths} / {assists}`\n"
-        f"💰 **GPM:** `{gpm}` | 🎓 **XPM:** `{xpm}`\n"
-        f"💵 **Networth:** `24 500`\n"
-        f"⏱️ **Длительность:** `38:15`\n\n"
-        f"🎰 **ММР:** `{manual_mmr + 25}` (**+25**)\n"
-        f"🏆 **Ранг:** {rank_name}\n"
-        f"\n🔥🔥🔥 3 победы подряд!\n"
-        f"\n🎖️ *Убийца! — 10+ убийств*\n"
-        f"\n🔗 [Dotabuff](https://www.dotabuff.com/matches/{match_id})"
-    )
-    
-    mock_items = [
-        "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/blink.png",
-        "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/black_king_bar.png",
-        "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/power_treads.png",
-        "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/echo_sabre.png",
-        "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/heavens_halberd.png",
-        "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/ultimate_scepter.png"
-    ]
-    mock_neutral = "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/philosophers_stone.png"
-    
-    item_purchases = [
-        {"itemId": 1, "time": 740}, # Blink
-        {"itemId": 2, "time": 1250}, # BKB
-        {"itemId": 3, "time": 450}, # Treads
-        {"itemId": 4, "time": 900}, # Echo
-        {"itemId": 5, "time": 1800}, # Halberd
-        {"itemId": 6, "time": 2100}  # Scepter
-    ]
-    
-    mock_abilities = [
-        {"abilityId": 597, "level": 10, "isTalent": True},
-        {"abilityId": 598, "level": 15, "isTalent": True},
-        {"abilityId": 599, "level": 20, "isTalent": True},
-        {"abilityId": 600, "level": 25, "isTalent": True}
-    ]
-    
-    abilities_dict = await dota.get_abilities_dict() or {
-        597: {"displayName": "+1.5s к длительности Charge"},
-        598: {"displayName": "+10 к урону за ед. скорости"},
-        599: {"displayName": "-3s перезарядки Bulldog"},
-        600: {"displayName": "500 ко все радиусу Greater Bash"}
-    }
+    # Default msg in case of early failure
+    msg = "❌ Ошибка при генерации теста."
     
     try:
+        # Get hero_id from args if provided, else default to 71 (Spirit Breaker)
+        hero_id = 71
+        if context.args and context.args[0].isdigit():
+            hero_id = int(context.args[0])
+        
+        is_win = True
+        result_emoji = "✨ ПОБЕДА ✨"
+        kills, deaths, assists = 12, 2, 8
+        gpm, xpm = 750, 820
+        match_id = 7123456789
+        
+        hero_info = await get_hero_info(hero_id)
+        hero_name = hero_info["name"]
+        
+        user = db.get_user(chat_id)
+        manual_mmr = (user.get("manual_mmr") or 1500) if user else 1500
+        
+        rank_name, rank_icon_id = get_rank_info(manual_mmr + 25)
+        
+        stats = {
+            "result_text": result_emoji,
+            "hero_name": hero_name,
+            "kills": kills, "deaths": deaths, "assists": assists,
+            "gpm": gpm, "xpm": xpm, "net_worth": 24500,
+            "duration": "38:15",
+            "rank_name": rank_name,
+            "new_mmr": manual_mmr + 25,
+            "mmr_diff": 25
+        }
+        
+        msg = (
+            f"**{result_emoji}** 🪄 (Тест)\n\n"
+            f"👾 **Герой:** {hero_name}\n"
+            f"🩸 **KDA:** `{kills} / {deaths} / {assists}`\n"
+            f"💰 **GPM:** `{gpm}` | 🎓 **XPM:** `{xpm}`\n"
+            f"💵 **Networth:** `24 500`\n"
+            f"⏱️ **Длительность:** `38:15`\n\n"
+            f"🎰 **ММР:** `{manual_mmr + 25}` (**+25**)\n"
+            f"🏆 **Ранг:** {rank_name}\n"
+            f"\n🔥🔥🔥 3 победы подряд!\n"
+            f"\n🎖️ *Убийца! — 10+ убийств*\n"
+            f"\n🔗 [Dotabuff](https://www.dotabuff.com/matches/{match_id})"
+        )
+        
+        mock_items = [
+            "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/blink.png",
+            "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/black_king_bar.png",
+            "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/power_treads.png",
+            "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/echo_sabre.png",
+            "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/heavens_halberd.png",
+            "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/ultimate_scepter.png"
+        ]
+        mock_neutral = "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/philosophers_stone.png"
+        
+        item_purchases = [
+            {"itemId": 1, "time": 740}, # Blink
+            {"itemId": 2, "time": 1250}, # BKB
+            {"itemId": 3, "time": 450}, # Treads
+            {"itemId": 4, "time": 900}, # Echo
+            {"itemId": 5, "time": 1800}, # Halberd
+            {"itemId": 6, "time": 2100}  # Scepter
+        ]
+        
+        mock_abilities = [
+            {"abilityId": 597, "level": 10, "isTalent": True},
+            {"abilityId": 598, "level": 15, "isTalent": True},
+            {"abilityId": 599, "level": 20, "isTalent": True},
+            {"abilityId": 600, "level": 25, "isTalent": True}
+        ]
+        
+        abilities_dict = await dota.get_abilities_dict() or {
+            597: {"displayName": "+1.5s к длительности Charge"},
+            598: {"displayName": "+10 к урону за ед. скорости"},
+            599: {"displayName": "-3s перезарядки Bulldog"},
+            600: {"displayName": "500 ко все радиусу Greater Bash"}
+        }
+        
         composite_io = await generate_composite_image(
             hero_short_name=hero_info.get("short"), 
             rank_icon_id=rank_icon_id, 
@@ -619,7 +627,9 @@ async def test_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown", disable_web_page_preview=True)
     except Exception as e:
-        logger.error(f"Error sending test msg: {e}")
+        logger.error(f"Error in test msg: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown", disable_web_page_preview=True)
 
 async def lastgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -672,8 +682,16 @@ async def lastgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         manual_mmr = user_info.get("manual_mmr", 0)
         rank_name, rank_icon_id = get_rank_info(manual_mmr)
         
-        new_mmr = manual_mmr + (25 if is_win else -25)
-        mmr_diff = 25 if is_win else -25
+        # Consistent MMR display logic
+        is_ranked = (lobby_type == 7)
+        is_turbo = (game_mode == 23)
+        
+        if is_ranked and not is_turbo:
+            new_mmr = manual_mmr + (25 if is_win else -25)
+            mmr_diff = 25 if is_win else -25
+        else:
+            new_mmr = manual_mmr
+            mmr_diff = None
         
         nw_timeline = pm.get("networth_timeline", [])
         nw_10 = nw_timeline[10] if len(nw_timeline) > 10 else None
@@ -694,6 +712,12 @@ async def lastgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "item_ids": pm.get("item_ids", [None]*6)
         }
         
+        # Prepare MMR text
+        if mmr_diff is not None:
+            mmr_text = f"`{new_mmr}` (**{'+' if mmr_diff>0 else ''}{mmr_diff}**)"
+        else:
+            mmr_text = f"`{manual_mmr}` (без изменений)"
+            
         msg = (
             f"**{result_emoji}{match_type_label}**\n\n"
             f"👾 **Герой:** {hero_name}\n"
@@ -701,7 +725,7 @@ async def lastgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💰 **GPM:** `{gpm}` | 🎓 **XPM:** `{xpm}`\n"
             f"💵 **Networth:** `{formatted_nw}`\n"
             f"⏱️ **Длительность:** `{duration_text}`\n\n"
-            f"🎰 **ММР:** `{new_mmr}` (**{'+' if mmr_diff>0 else ''}{mmr_diff}**)\n"
+            f"🎰 **ММР:** {mmr_text}\n"
             f"🏆 **Ранг:** {rank_name}\n"
             f"\n🔗 [Dotabuff](https://www.dotabuff.com/matches/{match_id})"
         )
