@@ -33,27 +33,32 @@ async def main():
     os.makedirs("assets/heroes", exist_ok=True)
     os.makedirs("assets/items", exist_ok=True)
     
+    # 1. Download Heroes
+    logger.info("Fetching hero list...")
+    heroes = await dota.get_all_heroes()
+    if not heroes:
+        logger.info("OpenDota failed, trying Stratz for heroes...")
+        heroes = await dota.get_all_heroes_stratz()
+        
+    count_h = 0
     async with httpx.AsyncClient() as client:
-        # 1. Download Heroes
-        logger.info("Fetching hero list...")
-        heroes = await dota.get_all_heroes()
-        count_h = 0
         for hid, hdata in heroes.items():
-            # Use short name for portraits
             short_name = hdata.get("name", "").replace("npc_dota_hero_", "")
             if short_name:
                 url = f"https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/{short_name}.png"
                 path = f"assets/heroes/{hid}.png"
                 if await download_image(client, url, path):
                     count_h += 1
-                    if count_h % 10 == 0:
-                        logger.info(f"Downloaded {count_h} heroes...")
         
         logger.info(f"Finished downloading {count_h} new heroes.")
         
         # 2. Download Items
         logger.info("Fetching item list...")
         items = await dota.get_all_items_full()
+        if not items:
+            logger.info("OpenDota failed, trying Stratz for items...")
+            items = await dota.get_all_items_stratz()
+            
         count_i = 0
         for iid_str, idata in items.items():
             iid = idata.get("id")
@@ -63,8 +68,6 @@ async def main():
                 path = f"assets/items/{iid}.png"
                 if await download_image(client, url, path):
                     count_i += 1
-                    if count_i % 50 == 0:
-                        logger.info(f"Downloaded {count_i} items...")
         
         logger.info(f"Finished downloading {count_i} new items.")
 

@@ -125,6 +125,32 @@ class DotaClient:
                 logger.error(f"Error fetching all items: {e}")
         return {}
 
+    async def get_all_heroes_stratz(self) -> dict:
+        """Fetch all heroes from Stratz as fallback."""
+        query = "{ constants { heroes { id name shortName } } }"
+        data = await self._query_stratz(query)
+        if data and "data" in data and "constants" in data["data"]:
+            # Convert to OpenDota-like format for compatibility
+            result = {}
+            for h in data["data"]["constants"]["heroes"]:
+                result[str(h["id"])] = {"id": h["id"], "name": f"npc_dota_hero_{h['shortName']}"}
+            return result
+        return {}
+
+    async def get_all_items_stratz(self) -> dict:
+        """Fetch all items from Stratz as fallback."""
+        query = "{ constants { items { id name displayName } } }"
+        data = await self._query_stratz(query)
+        if data and "data" in data and "constants" in data["data"]:
+            result = {}
+            for i in data["data"]["constants"]["items"]:
+                # Stratz item names usually don't have the full icons path
+                # But we can reconstruct it from the internal name
+                img_name = i["name"].replace("item_", "")
+                result[str(i["id"])] = {"id": i["id"], "img": f"/apps/dota2/images/dota_react/items/{img_name}.png"}
+            return result
+        return {}
+
     async def get_player(self, steam_id: int) -> dict | None:
         """Get player profile info via Stratz."""
         query = """
