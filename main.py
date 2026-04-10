@@ -1302,8 +1302,11 @@ async def main():
     # Start web server
     await start_web_server()
     
-    # Start bot
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    # Start bot with increased timeouts to prevent VPS network issues
+    from telegram.request import HTTPXRequest
+    request = HTTPXRequest(connect_timeout=20, read_timeout=20)
+    
+    application = ApplicationBuilder().token(BOT_TOKEN).request(request).build()
     
     # Handlers
     application.add_handler(CommandHandler("start", start))
