@@ -240,11 +240,6 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
                     for p in item_purchases:
                         iid = p.get("itemId")
                         if iid:
-                            # Ensure iid is int
-                            try:
-                                iid = int(iid)
-                            except:
-                                pass
                             if iid not in purchase_queues:
                                 purchase_queues[iid] = []
                             purchase_queues[iid].append(p.get("time"))
@@ -283,14 +278,10 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
                     
                     items_imgs.append(item_img)
                     
-                    # Match timing from queue (ensure item_id is int)
+                    # Match timing from queue
                     timing = None
-                    try:
-                        clean_item_id = int(item_id) if item_id else None
-                        if clean_item_id in purchase_queues and purchase_queues[clean_item_id]:
-                            timing = purchase_queues[clean_item_id].pop(0)
-                    except:
-                        pass
+                    if item_id in purchase_queues and purchase_queues[item_id]:
+                        timing = purchase_queues[item_id].pop(0)
                     item_timings.append(timing)
             
             neutral_img = None
@@ -714,7 +705,6 @@ async def lastgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         hero_short_name = pm.get("hero_short_name") or hero_info.get("short")
         item_purchases = pm.get("item_purchases", [])
-        logger.info(f"LastGame: found {len(item_purchases)} item timings for match {match_id}")
         abilities_data = pm.get("abilities", [])
         ability_cache = await dota.get_abilities_dict()
         
