@@ -327,15 +327,15 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
         nw_10_str = f"{nw_10_val:,}".replace(",", " ") if nw_10_val is not None else "N/A"
         
         draw_stat(stats_x, stats_y, "KDA", f"{stats.get('kills')}/{stats.get('deaths')}/{stats.get('assists')}")
-        draw_stat(stats_x + 100, stats_y, "GPM/XPM", f"{stats.get('gpm')}/{stats.get('xpm')}")
-        draw_stat(stats_x + 230, stats_y, "NET WORTH", f"{stats.get('net_worth', 0):,}".replace(",", " "))
-        draw_stat(stats_x + 360, stats_y, "DURATION", stats.get("duration", "00:00"))
+        draw_stat(stats_x + 60, stats_y, "GPM/XPM", f"{stats.get('gpm')}/{stats.get('xpm')}")
+        draw_stat(stats_x + 190, stats_y, "NET WORTH", f"{stats.get('net_worth', 0):,}".replace(",", " "))
+        draw_stat(stats_x + 320, stats_y, "DURATION", stats.get("duration", "00:00"))
 
         # Add MMR to the end of the stats row
         mmr_val = stats.get("new_mmr")
         mmr_diff = stats.get("mmr_diff")
         if mmr_val:
-            draw_stat(stats_x + 490, stats_y, "MMR", str(mmr_val))
+            draw_stat(stats_x + 450, stats_y, "MMR", str(mmr_val))
             if mmr_diff:
                 diff_str = f"({'+' if mmr_diff > 0 else ''}{mmr_diff})"
                 diff_col = (76, 175, 80) if mmr_diff > 0 else (244, 67, 54)
@@ -347,7 +347,7 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
                     mmr_val_w = len(str(mmr_val)) * 11
                 
                 # 6 pixels is a nice small space
-                draw.text((stats_x + 495 + mmr_val_w + 6, stats_y + 15), diff_str, fill=diff_col, font=font_reg)
+                draw.text((stats_x + 455 + mmr_val_w + 6, stats_y + 15), diff_str, fill=diff_col, font=font_reg)
 
         # Draw Items with Timings
         draw.text((315, 155), "ПРЕДМЕТЫ И ТАЙМИНГИ", fill=(100, 100, 110), font=font_tiny)
