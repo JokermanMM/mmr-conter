@@ -554,6 +554,8 @@ async def set_mmr_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text("❌ MMR должен быть числом. Пример: `/set_mmr 1695`", parse_mode="Markdown")
     except Exception as e:
+        logger.error(f"Set MMR error: {e}")
+        await update.message.reply_text("❌ Произошла ошибка. Попробуй позже.", parse_mode="Markdown")
 async def test_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Sends a mock match result for testing UI tweaks. Admin only."""
     chat_id = update.effective_chat.id
