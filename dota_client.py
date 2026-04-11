@@ -10,7 +10,7 @@ class DotaClient:
     
     def __init__(self, stratz_token: str = None):
         self.headers = {
-            "User-Agent": "Dota2MMRBot/1.0",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
             "Accept": "application/json"
         }
         self.stratz_token = stratz_token
@@ -18,7 +18,7 @@ class DotaClient:
             self.stratz_headers = {
                 "Authorization": f"Bearer {stratz_token}",
                 "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
                 "Accept": "application/json"
             }
         
@@ -322,16 +322,8 @@ class DotaClient:
         player_name = "Unknown"
         url = f"{self.OPENDOTA_URL}/players/{steam_id}"
         async with httpx.AsyncClient() as client:
-            try:
-                # Force OpenDota to sync with Valve API first 
-                # (essential because otherwise recentMatches is cached for a long time)
-                refresh_url = f"{self.OPENDOTA_URL}/players/{steam_id}/refresh"
-                await client.post(refresh_url, headers=self.headers, timeout=15.0)
-            except Exception as e:
-                logger.error(f"OpenDota refresh error: {e}")
-                
-            try:
-                r = await client.get(url, headers=self.headers, timeout=15.0)
+                try:
+                    r = await client.get(url, headers=self.headers, timeout=15.0)
                 if r.status_code == 200:
                     pdata = r.json()
                     player_name = pdata.get("profile", {}).get("personaname", "Unknown")

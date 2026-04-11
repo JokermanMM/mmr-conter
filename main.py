@@ -1363,8 +1363,8 @@ async def main():
     # Job queue
     job_queue = application.job_queue
     
-    # Match polling every 3 minutes
-    job_queue.run_repeating(monitor_matches, interval=180, first=10)
+    # Match polling every 10 minutes to avoid API blocks (429)
+    job_queue.run_repeating(monitor_matches, interval=600, first=10)
     
     # Daily summary at 23:30 MSK (20:30 UTC)
     job_queue.run_daily(daily_summary, time=time(hour=20, minute=30, tzinfo=timezone.utc))
