@@ -235,12 +235,18 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
             item_timings = []
             if items_urls:
                 # Find timing for each item in inventory
-                purchase_map = {}
+                purchase_queues = {} # {id: [time, time, ...]}
                 if item_purchases:
                     for p in item_purchases:
                         iid = p.get("itemId")
-                        if iid not in purchase_map:
-                            purchase_map[iid] = p.get("time")
+                        if iid:
+                            if iid not in purchase_queues:
+                                purchase_queues[iid] = []
+                            purchase_queues[iid].append(p.get("time"))
+                
+                # Sort queues to ensure earliest purchase comes first
+                for iid in purchase_queues:
+                    purchase_queues[iid].sort()
 
                 for i, url in enumerate(items_urls):
                     # Get item ID safely
@@ -271,7 +277,12 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
                             pass
                     
                     items_imgs.append(item_img)
-                    item_timings.append(purchase_map.get(item_id))
+                    
+                    # Match timing from queue
+                    timing = None
+                    if item_id in purchase_queues and purchase_queues[item_id]:
+                        timing = purchase_queues[item_id].pop(0)
+                    item_timings.append(timing)
             
             neutral_img = None
             if neutral_url:
@@ -543,9 +554,6 @@ async def set_mmr_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text("❌ MMR должен быть числом. Пример: `/set_mmr 1695`", parse_mode="Markdown")
     except Exception as e:
-        logger.error(f"Set MMR error: {e}")
-        await update.message.reply_text("❌ Произошла ошибка. Попробуй позже.", parse_mode="Markdown")
-
 async def test_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Sends a mock match result for testing UI tweaks. Admin only."""
     chat_id = update.effective_chat.id

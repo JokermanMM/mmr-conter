@@ -106,7 +106,9 @@ class DotaClient:
         url = f"{self.OPENDOTA_URL}/constants/heroes"
         async with httpx.AsyncClient() as client:
             try:
-                r = await client.get(url, headers=self.headers, timeout=15.0)
+                # Use browser-like headers for everything
+                headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+                r = await client.get(url, headers=headers, timeout=15.0)
                 if r.status_code == 200:
                     return r.json()
             except Exception as e:
@@ -118,7 +120,8 @@ class DotaClient:
         url = f"{self.OPENDOTA_URL}/constants/items"
         async with httpx.AsyncClient() as client:
             try:
-                r = await client.get(url, headers=self.headers, timeout=15.0)
+                headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+                r = await client.get(url, headers=headers, timeout=15.0)
                 if r.status_code == 200:
                     return r.json()
             except Exception as e:
@@ -365,6 +368,25 @@ class DotaClient:
                                 item_ids = [p.get(f"item_{i}") for i in range(6)]
                                 neutral_id = p.get("item_neutral")
                                 net_worth = p.get("net_worth", 0)
+                                
+                                # Process purchase_log
+                                purchase_log = p.get("purchase_log", [])
+                                item_purchases = []
+                                
+                                if purchase_log:
+                                    # Create a reverse map for item names to IDs using get_all_items_full
+                                    all_items = await self.get_all_items_full()
+                                    name_to_id = {data.get("name"): data.get("id") for data in all_items.values() if data.get("name")}
+                                    
+                                    for entry in purchase_log:
+                                        item_name = entry.get("key")
+                                        buy_time = entry.get("time")
+                                        if item_name and item_name.startswith("item_"):
+                                            # OpenDota might have item_blink, name_to_id should have it too
+                                            iid = name_to_id.get(item_name)
+                                            if iid:
+                                                item_purchases.append({"itemId": iid, "time": buy_time})
+
                                 items_map = await self.get_items_dict()
                                 items_urls = [items_map.get(iid) for iid in item_ids]
                                 neutral_url = items_map.get(neutral_id) if neutral_id else None
@@ -389,8 +411,10 @@ class DotaClient:
                         "net_worth": net_worth,
                         "lobby_type": latest.get("lobby_type"),
                         "game_mode": latest.get("game_mode"),
+                        "item_ids": item_ids,
                         "items_urls": items_urls,
-                        "neutral_url": neutral_url
+                        "neutral_url": neutral_url,
+                        "item_purchases": item_purchases
                     }
                 }
             except Exception as e:
