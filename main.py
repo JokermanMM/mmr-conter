@@ -214,7 +214,12 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
                 try:
                     async with session.get(banner_url) as resp:
                         if resp.status == 200:
-                            hero_banner = Image.open(io.BytesIO(await resp.read())).convert("RGBA")
+                            img_data = await resp.read()
+                            hero_banner = Image.open(io.BytesIO(img_data)).convert("RGBA")
+                            # Save to local cache for next time
+                            if hero_id:
+                                with open(local_hero_path, "wb") as f:
+                                    f.write(img_data)
                 except Exception as e:
                     logger.error(f"Error loading hero portrait: {e}")
             
@@ -256,7 +261,12 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
                         try:
                             async with session.get(url) as r:
                                 if r.status == 200:
-                                    item_img = Image.open(io.BytesIO(await r.read())).convert("RGBA")
+                                    img_data = await r.read()
+                                    item_img = Image.open(io.BytesIO(img_data)).convert("RGBA")
+                                    # Save to local cache
+                                    if item_id:
+                                        with open(local_item_path, "wb") as f:
+                                            f.write(img_data)
                         except:
                             pass
                     
