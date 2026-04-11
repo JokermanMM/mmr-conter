@@ -329,7 +329,7 @@ async def generate_composite_image(hero_short_name, rank_icon_id, items_urls=Non
         draw_stat(stats_x, stats_y, "KDA", f"{stats.get('kills')}/{stats.get('deaths')}/{stats.get('assists')}")
         draw_stat(stats_x + 85, stats_y, "GPM/XPM", f"{stats.get('gpm')}/{stats.get('xpm')}")
         draw_stat(stats_x + 190, stats_y, "NET WORTH", f"{stats.get('net_worth', 0):,}".replace(",", " "))
-        draw_stat(stats_x + 280, stats_y, "DURATION", stats.get("duration", "00:00"))
+        draw_stat(stats_x + 300, stats_y, "DURATION", stats.get("duration", "00:00"))
 
         # Add MMR to the end of the stats row
         mmr_val = stats.get("new_mmr")
