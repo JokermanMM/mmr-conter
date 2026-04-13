@@ -324,11 +324,11 @@ class DotaClient:
         async with httpx.AsyncClient() as client:
                 try:
                     r = await client.get(url, headers=self.headers, timeout=15.0)
-                if r.status_code == 200:
-                    pdata = r.json()
-                    player_name = pdata.get("profile", {}).get("personaname", "Unknown")
-            except Exception as e:
-                logger.error(f"OpenDota player fetch error: {e}")
+                    if r.status_code == 200:
+                        pdata = r.json()
+                        player_name = pdata.get("profile", {}).get("personaname", "Unknown")
+                except Exception as e:
+                    logger.error(f"OpenDota player fetch error: {e}")
             
             # Get recent matches
             try:
